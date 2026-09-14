@@ -1,0 +1,58 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: mtg-deck-builder-app
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DATASOURCE_URL=${DATASOURCE_URL}
+      - DATASOURCE_USERNAME=${DATASOURCE_USERNAME}
+      - DATASOURCE_PASSWORD=${DATASOURCE_PASSWORD}
+      - API_SECURITY_TOKEN_PASSWORD=${API_SECURITY_TOKEN_PASSWORD}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - APP_EMAIL_FROM=${APP_EMAIL_FROM}
+      - APP_FRONTEND_URL=${APP_FRONTEND_URL}
+      - APP_NAME=${APP_NAME}
+      - APP_EMAIL_VERIFICATION_EXPIRY_HOURS=${APP_EMAIL_VERIFICATION_EXPIRY_HOURS}
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_AUTH=${MAIL_AUTH}
+      - MAIL_STARTTLS=${MAIL_STARTTLS}
+      - PASSWORD_RESET_TOKEN_EXPIRY_HOURS=${PASSWORD_RESET_TOKEN_EXPIRY_HOURS}
+      - PASSWORD_RESET_CLEANUP_CRON=${PASSWORD_RESET_CLEANUP_CRON}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    container_name: mtg-deck-builder-db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: mtg-deck-builder-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
