@@ -33,7 +33,7 @@ public class Constructed60Validator implements FormatValidatorStrategy {
                 .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.SIDEBOARD)
                 .filter(card -> card.getOracleId().equals(newCard.getOracleId()))
                 .mapToLong(DeckCard::getQuantity).sum() + newCard.getQuantity();
-        int limit = overrides.getMaxCopies(cardDetails);
+        int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails));
         if (limit != Integer.MAX_VALUE && copies > limit) {
             throw new RuleViolationException("Copy limit exceeded for " + cardDetails.name() + ": " + limit);
         }

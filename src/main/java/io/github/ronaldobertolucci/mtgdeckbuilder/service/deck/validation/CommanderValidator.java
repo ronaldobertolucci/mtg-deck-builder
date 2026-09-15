@@ -43,7 +43,7 @@ public class CommanderValidator implements FormatValidatorStrategy {
         if (mainboard > 99 || mainboard + commanders > 100) {
             throw new RuleViolationException("Commander decks cannot exceed 99 mainboard cards and 100 cards in total");
         }
-        int limit = overrides.getMaxCopies(cardDetails, 1);
+        int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1));
         long copies = deck.getCards().stream()
                 .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMMANDER)
                 .filter(card -> card.getOracleId().equals(newCard.getOracleId()))

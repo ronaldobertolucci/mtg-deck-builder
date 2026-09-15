@@ -99,6 +99,8 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ProblemDetail> problem(HttpStatus status, String detail, HttpServletRequest request) {
         var problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setType(URI.create("about:blank"));
+        problem.setTitle(status.getReasonPhrase());
         problem.setInstance(URI.create(request.getRequestURI()));
         return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem);
     }

@@ -74,6 +74,6 @@ class CardRuleOverrideServiceTest {
     }
 
     private CardDetailsResponse card(String type, String text) {
-        return new CardDetailsResponse(UUID.randomUUID(), "Example", type, text, List.of());
+        return new CardDetailsResponse(UUID.randomUUID(), "Example", type, text, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities());
     }
 }

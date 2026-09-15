@@ -61,6 +61,10 @@ class CardIntegrationServiceTest {
         var card = service.fetchCardDetails(ORACLE_ID);
 
         assertThat(card.oracleId()).isEqualTo(ORACLE_ID);
+        assertThat(card.legalities()).containsEntry("modern", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.LEGAL)
+                .containsEntry("standard", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.NOT_LEGAL)
+                .containsEntry("legacy", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.RESTRICTED)
+                .containsEntry("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED);
         assertThat(card.name()).isEqualTo("Lightning Bolt");
         assertThat(card.typeLine()).isEqualTo("Instant");
         assertThat(card.oracleText()).isEqualTo("Lightning Bolt deals 3 damage to any target.");
@@ -158,11 +162,12 @@ class CardIntegrationServiceTest {
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {
-                          "oracleId": "%s",
+                          "oracle_id": "%s",
                           "name": "Lightning Bolt",
-                          "typeLine": "Instant",
-                          "oracleText": "Lightning Bolt deals 3 damage to any target.",
-                          "colorIdentity": ["R"]
+                          "type_line": "Instant",
+                          "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+                          "color_identity": ["R"],
+                          "legalities": {"standard": "not_legal", "modern": "legal", "legacy": "restricted", "commander": "banned"}
                         }
                         """.formatted(oracleId), MediaType.APPLICATION_JSON));
     }

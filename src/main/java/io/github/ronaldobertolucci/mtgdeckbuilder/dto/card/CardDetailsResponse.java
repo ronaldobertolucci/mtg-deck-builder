@@ -4,6 +4,10 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -16,9 +20,13 @@ public record CardDetailsResponse(
         @JsonProperty("oracle_text")
         String oracleText,
         @JsonProperty("color_identity")
-        List<String> colorIdentity
+        List<String> colorIdentity,
+        Map<String, CardLegality> legalities
 ) {
     public CardDetailsResponse {
+        legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(
+                Collectors.toUnmodifiableMap(entry -> entry.getKey().toLowerCase(Locale.ROOT),
+                        entry -> Objects.requireNonNullElse(entry.getValue(), CardLegality.UNKNOWN)));
         colorIdentity = colorIdentity != null ? List.copyOf(colorIdentity) : List.of();
     }
 }
