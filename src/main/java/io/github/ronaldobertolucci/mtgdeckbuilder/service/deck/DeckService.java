@@ -27,14 +27,15 @@ public class DeckService {
 
     public DeckResponse create(Long userId, CreateDeckRequest request) {
         Deck deck = new Deck(userId, request.name(), request.format());
-        if (request.format() == Format.COMMANDER && request.commanderOracleId() == null) {
-            throw new RuleViolationException("Commander oracle ID is required");
+        var ids = request.commanderOracleIds() == null ? List.<UUID>of() : request.commanderOracleIds();
+        if (ids.size() > 2 || ids.stream().anyMatch(java.util.Objects::isNull)
+                || ids.stream().distinct().count() != ids.size()
+                || (request.format() == Format.COMMANDER && ids.isEmpty())
+                || (request.format() != Format.COMMANDER && !ids.isEmpty())) {
+            throw new RuleViolationException("Invalid commander selection");
         }
-        if (request.commanderOracleId() != null) {
-            var card = new DeckCard(request.commanderOracleId(), 1, BoardType.COMMANDER);
-            validator(deck).validateCardAddition(deck, card, integration.fetchCardDetails(card.getOracleId()));
-            deck.addCard(card);
-        }
+        for (UUID id : ids) deck.addCard(new DeckCard(id, 1, BoardType.COMMANDER));
+        validateCommanders(deck);
         return DeckResponse.from(repository.saveAndFlush(deck));
     }
 
@@ -46,9 +47,13 @@ public class DeckService {
                 .findFirst().orElse(null);
         if (request.quantity() == 0) {
             if (existing != null) {
-                if (existing.getBoardType() == BoardType.COMMANDER && deck.getCards().stream()
-                        .anyMatch(card -> card.getBoardType() == BoardType.MAINBOARD)) {
-                    throw new RuleViolationException("Remove mainboard cards before removing the commander");
+                if (existing.getBoardType() == BoardType.COMMANDER) {
+                    Deck remaining = without(deck, existing);
+                    if (remaining.getCards().stream().noneMatch(card -> card.getBoardType() == BoardType.COMMANDER)
+                            && !remaining.getCards().isEmpty()) {
+                        throw new RuleViolationException("Remove mainboard cards before removing the last commander");
+                    }
+                    validateCommanders(remaining);
                 }
                 deck.removeCard(existing);
             }
@@ -56,16 +61,30 @@ public class DeckService {
             var details = integration.fetchCardDetails(request.oracleId());
             var candidate = new DeckCard(request.oracleId(), request.quantity(), request.boardType());
             // Validate a detached view excluding the replaced row, without mutating managed entities.
-            Deck validationDeck = new Deck(deck.getUserId(), deck.getName(), deck.getFormat());
-            for (DeckCard card : deck.getCards()) {
-                if (card != existing) validationDeck.addCard(new DeckCard(
-                        card.getOracleId(), card.getQuantity(), card.getBoardType()));
-            }
+            Deck validationDeck = without(deck, existing);
             validator(deck).validateCardAddition(validationDeck, candidate, details);
             if (existing == null) deck.addCard(candidate);
             else existing.setQuantity(request.quantity());
         }
         return DeckResponse.from(repository.saveAndFlush(deck));
+    }
+
+    private void validateCommanders(Deck deck) {
+        for (DeckCard card : deck.getCards()) {
+            if (card.getBoardType() == BoardType.COMMANDER) {
+                validator(deck).validateCardAddition(without(deck, card),
+                        new DeckCard(card.getOracleId(), 1, BoardType.COMMANDER),
+                        integration.fetchCardDetails(card.getOracleId()));
+            }
+        }
+    }
+
+    private Deck without(Deck deck, DeckCard excluded) {
+        Deck copy = new Deck(deck.getUserId(), deck.getName(), deck.getFormat());
+        for (DeckCard card : deck.getCards()) {
+            if (card != excluded) copy.addCard(new DeckCard(card.getOracleId(), card.getQuantity(), card.getBoardType()));
+        }
+        return copy;
     }
 
     private FormatValidatorStrategy validator(Deck deck) {

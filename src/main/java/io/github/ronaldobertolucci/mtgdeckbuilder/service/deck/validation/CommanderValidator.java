@@ -8,6 +8,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardRuleOverrideS
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
 
 @Component
 public class CommanderValidator implements FormatValidatorStrategy {
@@ -37,11 +40,13 @@ public class CommanderValidator implements FormatValidatorStrategy {
                 + (newCard.getBoardType() == BoardType.MAINBOARD ? newCard.getQuantity() : 0);
         long commanders = count(deck, BoardType.COMMANDER)
                 + (newCard.getBoardType() == BoardType.COMMANDER ? newCard.getQuantity() : 0);
-        if (commanders != 1) {
-            throw new RuleViolationException("Commander decks require exactly one commander before adding mainboard cards");
+        if (commanders < 1 || commanders > 2 || (newCard.getBoardType() == BoardType.COMMANDER && newCard.getQuantity() != 1)
+                || deck.getCards().stream().anyMatch(card -> card.getBoardType() == BoardType.COMMANDER && card.getQuantity() != 1)) {
+            throw new RuleViolationException("Commander decks require one or two distinct commanders, with one copy each");
         }
-        if (mainboard > 99 || mainboard + commanders > 100) {
-            throw new RuleViolationException("Commander decks cannot exceed 99 mainboard cards and 100 cards in total");
+        if (mainboard + commanders > 100) {
+            throw new RuleViolationException("Commander decks cannot exceed " + (100 - commanders)
+                    + " mainboard cards and 100 cards in total");
         }
         int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1));
         long copies = deck.getCards().stream()
@@ -51,18 +56,34 @@ public class CommanderValidator implements FormatValidatorStrategy {
         if (limit != Integer.MAX_VALUE && copies > limit) {
             throw new RuleViolationException("Copy limit exceeded for " + cardDetails.name() + ": " + limit);
         }
+        List<CardDetailsResponse> team = new ArrayList<>();
+        for (DeckCard card : deck.getCards()) {
+            if (card.getBoardType() == BoardType.COMMANDER) {
+                team.add(cardIntegration.fetchCardDetails(card.getOracleId()));
+            }
+        }
+        if (newCard.getBoardType() == BoardType.COMMANDER) team.add(cardDetails);
+        for (var commander : team) CardLegalityRules.enforce(commander, Format.COMMANDER, 1);
+        CommanderPairRules.validate(team);
+        Set<String> colors = new HashSet<>();
+        team.forEach(commander -> colors.addAll(commander.colorIdentity()));
         if (newCard.getBoardType() == BoardType.COMMANDER) {
-            // Validate existing cards too when defining a commander for an imported deck.
             for (DeckCard card : deck.getCards()) {
                 if (card.getBoardType() == BoardType.MAINBOARD) {
-                    validateColors(cardIntegration.fetchCardDetails(card.getOracleId()), cardDetails.colorIdentity());
+                    validateColors(cardIntegration.fetchCardDetails(card.getOracleId()), colors);
                 }
             }
         } else {
-            DeckCard commander = deck.getCards().stream()
-                    .filter(card -> card.getBoardType() == BoardType.COMMANDER).findFirst().orElseThrow();
-            CardDetailsResponse commanderDetails = cardIntegration.fetchCardDetails(commander.getOracleId());
-            validateColors(cardDetails, commanderDetails.colorIdentity());
+            validateColors(cardDetails, colors);
+        }
+    }
+
+    /** Checks the final card count; additions still allow a deck under construction. */
+    public void validateDeckCompletion(Deck deck) {
+        if (deck.getFormat() != Format.COMMANDER || count(deck, BoardType.COMMANDER) < 1
+                || count(deck, BoardType.COMMANDER) > 2 || count(deck, BoardType.SIDEBOARD) != 0
+                || count(deck, BoardType.MAINBOARD) + count(deck, BoardType.COMMANDER) != 100) {
+            throw new RuleViolationException("A completed Commander deck must contain exactly 100 cards including its commanders");
         }
     }
 
@@ -71,7 +92,7 @@ public class CommanderValidator implements FormatValidatorStrategy {
                 .mapToLong(DeckCard::getQuantity).sum();
     }
 
-    private void validateColors(CardDetailsResponse card, List<String> commanderColors) {
+    private void validateColors(CardDetailsResponse card, Set<String> commanderColors) {
         if (!commanderColors.containsAll(card.colorIdentity())) {
             throw new RuleViolationException("Card color identity is outside the commander's color identity: " + card.name());
         }

@@ -91,7 +91,7 @@ class CommanderValidatorTest {
     void unlimitedCopiesStillRespectTotalDeckSize() {
         addCommander();
         mockCommanderColors(List.of("U"));
-        var details = details("Creature", "A deck can have any number of cards named Example.", List.of("U"));
+        var details = details("Legendary Creature", "A deck can have any number of cards named Example.", List.of("U"));
         assertThatCode(() -> validator.validateCardAddition(deck, addition(99), details)).doesNotThrowAnyException();
         assertViolation(addition(100), details, "100 cards");
     }
@@ -150,16 +150,17 @@ class CommanderValidatorTest {
 
     @Test
     void rejectsMainboardWithoutCommander() {
-        assertViolation(addition(1), details("Creature", "", List.of()), "exactly one commander");
+        assertViolation(addition(1), details("Creature", "", List.of()), "one or two distinct commanders");
         verifyNoInteractions(integration);
     }
 
     @Test
     void rejectsSecondCommanderAndCommanderQuantityOfTwoEvenWithOverride() {
-        var details = details("Creature", "A deck can have any number of cards named Example.", List.of());
-        assertViolation(new DeckCard(oracleId, 2, BoardType.COMMANDER), details, "exactly one commander");
+        var details = details("Legendary Creature", "A deck can have any number of cards named Example.", List.of());
+        assertViolation(new DeckCard(oracleId, 2, BoardType.COMMANDER), details, "one or two distinct commanders");
         addCommander();
-        assertViolation(new DeckCard(oracleId, 1, BoardType.COMMANDER), details, "exactly one commander");
+        mockCommanderColors(List.of());
+        assertViolation(new DeckCard(oracleId, 1, BoardType.COMMANDER), details, "compatible partner abilities");
     }
 
     @Test

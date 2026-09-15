@@ -65,7 +65,7 @@ class CommanderCreationFlowTest {
                         .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"Commander","format":"COMMANDER","commanderOracleId":"%s"}
+                                {"name":"Commander","format":"COMMANDER","commanderOracleIds":["%s"]}
                                 """.formatted(oracleId)))
                 .andExpect(status().is(422))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))

@@ -31,7 +31,7 @@ class DeckServiceTest {
     void owned() { when(repository.findOwnedForUpdate(deckId, 42L)).thenReturn(Optional.of(deck)); }
     void saved() { when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0)); }
     void details() { when(integration.fetchCardDetails(oracleId)).thenReturn(
-            new CardDetailsResponse(oracleId, "Example", "Creature", "", List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities())); }
+            new CardDetailsResponse(oracleId, "Example", "Legendary Creature", "", List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities())); }
     UpsertDeckCardRequest request(int quantity) { return new UpsertDeckCardRequest(oracleId, BoardType.MAINBOARD, quantity); }
 
     @Test void createsConstructedOwnedByAuthenticatedUser() {
@@ -43,7 +43,7 @@ class DeckServiceTest {
     }
     @Test void createsCommanderWithCardInCascade() {
         saved(); details();
-        var response = service.create(42L, new CreateDeckRequest("Test", Format.COMMANDER, oracleId));
+        var response = service.create(42L, new CreateDeckRequest("Test", Format.COMMANDER, List.of(oracleId)));
         assertThat(response.cards()).hasSize(1);
         assertThat(response.cards().getFirst().boardType()).isEqualTo(BoardType.COMMANDER);
         verify(integration).fetchCardDetails(oracleId);
@@ -102,7 +102,7 @@ class DeckServiceTest {
     @Test void bannedCommanderCannotBeCreated() {
         when(integration.fetchCardDetails(oracleId)).thenReturn(new CardDetailsResponse(oracleId, "Banned", "Legendary Creature",
                 "", List.of(), Map.of("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED)));
-        assertThatThrownBy(() -> service.create(42L, new CreateDeckRequest("Test", Format.COMMANDER, oracleId)))
+        assertThatThrownBy(() -> service.create(42L, new CreateDeckRequest("Test", Format.COMMANDER, List.of(oracleId))))
                 .isInstanceOf(RuleViolationException.class).hasMessageContaining("BANNED");
         verify(repository, never()).saveAndFlush(any());
     }

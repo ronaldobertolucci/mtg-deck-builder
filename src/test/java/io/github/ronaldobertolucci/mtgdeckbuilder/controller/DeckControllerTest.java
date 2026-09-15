@@ -79,7 +79,7 @@ class DeckControllerTest {
     @Test void creationRuleViolationIsAlsoProblemDetail() throws Exception {
         when(service.create(eq(42L), any())).thenThrow(new RuleViolationException("Invalid commander"));
         mvc.perform(post("/decks").with(owner()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleId\":\"" + oracleId + "\"}"))
+                .content("{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleIds\":[\"" + oracleId + "\"]}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Invalid commander"));
     }
 
@@ -88,7 +88,7 @@ class DeckControllerTest {
                 .content("{\"name\":\"Deck\",\"format\":\"COMMANDER\"}"))
                 .andExpect(status().isBadRequest()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.errors[0].field").value("commanderOracleId"));
+                .andExpect(jsonPath("$.errors[0].field").value("commanderOracleIds"));
         verifyNoInteractions(service);
     }
 
@@ -105,6 +105,31 @@ class DeckControllerTest {
     void invalidUpsertReturns400(String json) throws Exception {
         mvc.perform(put("/decks/{id}/cards", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+        verifyNoInteractions(service);
+    }
+
+    @Test void acceptsTwoCommanderIds() throws Exception {
+        UUID second = UUID.randomUUID();
+        when(service.create(eq(42L), any())).thenReturn(response());
+        mvc.perform(post("/decks").with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Pair","format":"COMMANDER","commanderOracleIds":["%s","%s"]}
+                        """.formatted(oracleId, second)))
+                .andExpect(status().isCreated());
+        verify(service).create(eq(42L), argThat(request -> request.commanderOracleIds().equals(List.of(oracleId, second))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleIds\":[]}",
+        "{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleIds\":[null]}",
+        "{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleIds\":[\"00000000-0000-0000-0000-000000000001\",\"00000000-0000-0000-0000-000000000001\"]}",
+        "{\"name\":\"Deck\",\"format\":\"MODERN\",\"commanderOracleIds\":[\"00000000-0000-0000-0000-000000000001\"]}",
+        "{\"name\":\"Deck\",\"format\":\"COMMANDER\",\"commanderOracleIds\":[\"00000000-0000-0000-0000-000000000001\",\"00000000-0000-0000-0000-000000000002\",\"00000000-0000-0000-0000-000000000003\"]}"
+    })
+    void invalidCommanderSelectionsReturn400(String json) throws Exception {
+        mvc.perform(post("/decks").with(owner()).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors").isArray());
         verifyNoInteractions(service);
     }
 
