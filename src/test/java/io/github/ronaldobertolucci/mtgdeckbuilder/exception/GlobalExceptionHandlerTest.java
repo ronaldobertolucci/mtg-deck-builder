@@ -76,14 +76,14 @@ class GlobalExceptionHandlerTest {
         MethodArgumentNotValidException exception = new MethodArgumentNotValidException(null, bindingResult);
 
         // Act
-        ResponseEntity<ErrorResponseDto> response = exceptionHandler.handleValidationErrors(exception, request);
+        var response = exceptionHandler.handleValidationErrors(exception, request);
 
         // Assert
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals("Validation Failed", response.getBody().error());
-        assertNotNull(response.getBody().details());
-        assertEquals(2, response.getBody().details().size());
+        assertEquals("Bad Request", response.getBody().getTitle());
+        assertNotNull(response.getBody().getProperties());
+        assertEquals(2, ((List<?>) response.getBody().getProperties().get("errors")).size());
     }
 
     @Test
