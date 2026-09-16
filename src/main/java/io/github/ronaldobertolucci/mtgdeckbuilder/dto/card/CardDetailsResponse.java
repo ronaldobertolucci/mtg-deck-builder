@@ -21,9 +21,11 @@ public record CardDetailsResponse(
         String oracleText,
         @JsonProperty("color_identity")
         List<String> colorIdentity,
-        Map<String, CardLegality> legalities
+        Map<String, CardLegality> legalities,
+        List<String> keywords
 ) {
     public CardDetailsResponse {
+        keywords = keywords == null ? List.of() : List.copyOf(keywords);
         legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(
                 Collectors.toUnmodifiableMap(entry -> entry.getKey().toLowerCase(Locale.ROOT),
                         entry -> Objects.requireNonNullElse(entry.getValue(), CardLegality.UNKNOWN)));

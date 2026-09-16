@@ -29,8 +29,10 @@ public class Constructed60Validator implements FormatValidatorStrategy {
         if (newCard.getBoardType() == BoardType.COMMANDER) {
             throw new RuleViolationException("Constructed decks cannot have a commander");
         }
+        CompanionRules.validateAddition(deck, newCard, cardDetails);
         long copies = deck.getCards().stream()
-                .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.SIDEBOARD)
+                .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.SIDEBOARD
+                        || card.getBoardType() == BoardType.COMPANION)
                 .filter(card -> card.getOracleId().equals(newCard.getOracleId()))
                 .mapToLong(DeckCard::getQuantity).sum() + newCard.getQuantity();
         int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails));
@@ -38,13 +40,13 @@ public class Constructed60Validator implements FormatValidatorStrategy {
             throw new RuleViolationException("Copy limit exceeded for " + cardDetails.name() + ": " + limit);
         }
         long sideboard = deck.getCards().stream()
-                .filter(card -> card.getBoardType() == BoardType.SIDEBOARD)
+                .filter(card -> card.getBoardType() == BoardType.SIDEBOARD || card.getBoardType() == BoardType.COMPANION)
                 .mapToLong(DeckCard::getQuantity).sum();
-        if (newCard.getBoardType() == BoardType.SIDEBOARD) {
+        if (newCard.getBoardType() == BoardType.SIDEBOARD || newCard.getBoardType() == BoardType.COMPANION) {
             sideboard += newCard.getQuantity();
         }
         if (sideboard > 15) {
-            throw new RuleViolationException("Sideboard cannot exceed 15 cards");
+            throw new RuleViolationException("Sideboard and companion together cannot exceed 15 cards");
         }
     }
 }

@@ -157,6 +157,25 @@ class CardIntegrationServiceTest {
         assertThat(policy.expireAfterAccess().orElseThrow().getExpiresAfter()).isEqualTo(Duration.ofHours(24));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"omitted", "null", "present"})
+    void readsCompanionKeywordsAndDefaultsMissingDataToEmpty(String scenario) {
+        String keywords = switch (scenario) {
+            case "present" -> ", \"keywords\": [\"Companion\", \"Vigilance\"]";
+            case "null" -> ", \"keywords\": null";
+            default -> "";
+        };
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("""
+                        {"oracle_id":"%s","name":"Test companion","type_line":"Creature",
+                         "oracle_text":"Companion — Test condition.","color_identity":[],"legalities":{"modern":"legal"}%s}
+                        """.formatted(ORACLE_ID, keywords), MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetails(ORACLE_ID);
+        if (scenario.equals("present")) assertThat(card.keywords()).containsExactly("Companion", "Vigilance");
+        else assertThat(card.keywords()).isEmpty();
+        server.verify();
+    }
+
     private void expectCard(UUID oracleId) {
         server.expect(once(), requestTo(CARD_URL + oracleId + "?lang=en"))
                 .andExpect(method(HttpMethod.GET))

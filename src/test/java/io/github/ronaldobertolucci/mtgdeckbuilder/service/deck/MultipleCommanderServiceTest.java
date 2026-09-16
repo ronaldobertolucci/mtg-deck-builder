@@ -23,7 +23,7 @@ class MultipleCommanderServiceTest {
     UUID first=UUID.randomUUID(),second=UUID.randomUUID(),cardId=UUID.randomUUID(),deckId=UUID.randomUUID();
     DeckService service() { return new DeckService(repository,integration,List.of(new CommanderValidator(new CardRuleOverrideService(),integration))); }
     CardDetailsResponse card(UUID id,String type,String text,List<String> colors) {
-        return new CardDetailsResponse(id,id.toString(),type,text,colors,CardTestFixtures.legalities());
+        return new CardDetailsResponse(id,id.toString(),type,text,colors,CardTestFixtures.legalities(), java.util.List.of());
     }
     void saved() { when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0)); }
     @Test void backgroundFirstCanBeCreatedAtomically() {

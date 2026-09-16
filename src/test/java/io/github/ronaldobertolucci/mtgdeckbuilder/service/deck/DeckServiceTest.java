@@ -31,7 +31,7 @@ class DeckServiceTest {
     void owned() { when(repository.findOwnedForUpdate(deckId, 42L)).thenReturn(Optional.of(deck)); }
     void saved() { when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0)); }
     void details() { when(integration.fetchCardDetails(oracleId)).thenReturn(
-            new CardDetailsResponse(oracleId, "Example", "Legendary Creature", "", List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities())); }
+            new CardDetailsResponse(oracleId, "Example", "Legendary Creature", "", List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of())); }
     UpsertDeckCardRequest request(int quantity) { return new UpsertDeckCardRequest(oracleId, BoardType.MAINBOARD, quantity); }
 
     @Test void createsConstructedOwnedByAuthenticatedUser() {
@@ -93,7 +93,7 @@ class DeckServiceTest {
         owned(); saved();
         when(integration.fetchCardDetails(oracleId)).thenReturn(new CardDetailsResponse(oracleId, "Restricted", "Creature",
                 "A deck can have any number of cards named Restricted.", List.of(),
-                Map.of("modern", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.RESTRICTED)));
+                Map.of("modern", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.RESTRICTED), java.util.List.of()));
         service.upsertCard(42L, deckId, request(1));
         service.upsertCard(42L, deckId, request(1));
         assertThatThrownBy(() -> service.upsertCard(42L, deckId, request(2))).isInstanceOf(RuleViolationException.class);
@@ -101,7 +101,7 @@ class DeckServiceTest {
     }
     @Test void bannedCommanderCannotBeCreated() {
         when(integration.fetchCardDetails(oracleId)).thenReturn(new CardDetailsResponse(oracleId, "Banned", "Legendary Creature",
-                "", List.of(), Map.of("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED)));
+                "", List.of(), Map.of("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED), java.util.List.of()));
         assertThatThrownBy(() -> service.create(42L, new CreateDeckRequest("Test", Format.COMMANDER, List.of(oracleId))))
                 .isInstanceOf(RuleViolationException.class).hasMessageContaining("BANNED");
         verify(repository, never()).saveAndFlush(any());

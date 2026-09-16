@@ -211,7 +211,7 @@ class CommanderValidatorTest {
     }
 
     private CardDetailsResponse commanderDetails(List<String> colors) {
-        return new CardDetailsResponse(commanderId, "Commander", "Legendary Creature", "", colors, io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities());
+        return new CardDetailsResponse(commanderId, "Commander", "Legendary Creature", "", colors, io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of());
     }
 
     private DeckCard addition(int quantity) {
@@ -219,7 +219,7 @@ class CommanderValidatorTest {
     }
 
     private CardDetailsResponse details(String type, String text, List<String> colors) {
-        return new CardDetailsResponse(oracleId, "Example", type, text, colors, io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities());
+        return new CardDetailsResponse(oracleId, "Example", type, text, colors, io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of());
     }
 
     private void assertViolation(DeckCard card, CardDetailsResponse details, String message) {

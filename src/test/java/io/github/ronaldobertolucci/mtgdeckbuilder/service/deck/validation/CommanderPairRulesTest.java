@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.*;
 
 class CommanderPairRulesTest {
     private CardDetailsResponse card(String name, String type, String text) {
-        return new CardDetailsResponse(UUID.randomUUID(), name, type, text, List.of(), CardTestFixtures.legalities());
+        return new CardDetailsResponse(UUID.randomUUID(), name, type, text, List.of(), CardTestFixtures.legalities(), java.util.List.of());
     }
     private CardDetailsResponse creature(String name, String text) { return card(name, "Legendary Creature — Human", text); }
     private void acceptsBothOrders(CardDetailsResponse a, CardDetailsResponse b) {

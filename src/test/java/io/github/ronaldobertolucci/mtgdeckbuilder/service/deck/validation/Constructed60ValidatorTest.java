@@ -114,7 +114,7 @@ class Constructed60ValidatorTest {
     @Test
     void rejectsWrongMetadataAndAlreadyAddedCard() {
         var card = addition(1, BoardType.MAINBOARD);
-        var wrongDetails = new CardDetailsResponse(UUID.randomUUID(), "Other", "Creature", "", List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities());
+        var wrongDetails = new CardDetailsResponse(UUID.randomUUID(), "Other", "Creature", "", List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of());
         assertViolation(card, wrongDetails, "match");
         deck.addCard(card);
         assertViolation(card, details("Creature", ""), "before adding");
@@ -133,7 +133,7 @@ class Constructed60ValidatorTest {
     }
 
     private CardDetailsResponse details(String type, String text) {
-        return new CardDetailsResponse(oracleId, "Example", type, text, List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities());
+        return new CardDetailsResponse(oracleId, "Example", type, text, List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of());
     }
 
     private void assertViolation(DeckCard card, CardDetailsResponse details, String message) {

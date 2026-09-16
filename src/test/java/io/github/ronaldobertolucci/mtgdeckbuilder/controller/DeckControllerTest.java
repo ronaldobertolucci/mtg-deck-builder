@@ -133,6 +133,21 @@ class DeckControllerTest {
         verifyNoInteractions(service);
     }
 
+    @ParameterizedTest @ValueSource(ints = {1, 0})
+    void acceptsCompanionBoardForUpsertAndRemoval(int quantity) throws Exception {
+        var result = new DeckResponse(deckId, "Test", Format.MODERN, null, null,
+                quantity == 0 ? List.of() : List.of(new DeckCardResponse(UUID.randomUUID(), oracleId,
+                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.COMPANION, 1)));
+        when(service.upsertCard(eq(42L), eq(deckId), any())).thenReturn(result);
+        mvc.perform(put("/decks/{id}/cards", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"oracleId":"%s","boardType":"COMPANION","quantity":%d}
+                        """.formatted(oracleId, quantity)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cards.length()").value(quantity));
+        verify(service).upsertCard(eq(42L), eq(deckId), argThat(request -> request.boardType()
+                == io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.COMPANION && request.quantity() == quantity));
+    }
+
     @Test void unauthenticatedCannotCreateDeck() throws Exception {
         mvc.perform(post("/decks").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Deck\",\"format\":\"MODERN\"}")).andExpect(status().isForbidden());

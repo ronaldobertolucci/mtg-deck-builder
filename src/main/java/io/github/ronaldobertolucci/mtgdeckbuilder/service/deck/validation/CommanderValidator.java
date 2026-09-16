@@ -36,6 +36,7 @@ public class CommanderValidator implements FormatValidatorStrategy {
         if (newCard.getBoardType() == BoardType.SIDEBOARD) {
             throw new RuleViolationException("Commander decks do not support a sideboard");
         }
+        CompanionRules.validateAddition(deck, newCard, cardDetails);
         long mainboard = count(deck, BoardType.MAINBOARD)
                 + (newCard.getBoardType() == BoardType.MAINBOARD ? newCard.getQuantity() : 0);
         long commanders = count(deck, BoardType.COMMANDER)
@@ -50,7 +51,8 @@ public class CommanderValidator implements FormatValidatorStrategy {
         }
         int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1));
         long copies = deck.getCards().stream()
-                .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMMANDER)
+                .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMMANDER
+                        || card.getBoardType() == BoardType.COMPANION)
                 .filter(card -> card.getOracleId().equals(newCard.getOracleId()))
                 .mapToLong(DeckCard::getQuantity).sum() + newCard.getQuantity();
         if (limit != Integer.MAX_VALUE && copies > limit) {
@@ -69,7 +71,7 @@ public class CommanderValidator implements FormatValidatorStrategy {
         team.forEach(commander -> colors.addAll(commander.colorIdentity()));
         if (newCard.getBoardType() == BoardType.COMMANDER) {
             for (DeckCard card : deck.getCards()) {
-                if (card.getBoardType() == BoardType.MAINBOARD) {
+                if (card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMPANION) {
                     validateColors(cardIntegration.fetchCardDetails(card.getOracleId()), colors);
                 }
             }
@@ -80,6 +82,7 @@ public class CommanderValidator implements FormatValidatorStrategy {
 
     /** Checks the final card count; additions still allow a deck under construction. */
     public void validateDeckCompletion(Deck deck) {
+        CompanionRules.validateBoard(deck);
         if (deck.getFormat() != Format.COMMANDER || count(deck, BoardType.COMMANDER) < 1
                 || count(deck, BoardType.COMMANDER) > 2 || count(deck, BoardType.SIDEBOARD) != 0
                 || count(deck, BoardType.MAINBOARD) + count(deck, BoardType.COMMANDER) != 100) {

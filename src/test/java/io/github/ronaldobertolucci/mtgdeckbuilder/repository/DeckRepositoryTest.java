@@ -171,6 +171,25 @@ class DeckRepositoryTest {
                 .hasStackTraceContaining("ck_deck_cards_board_type");
     }
 
+    @Test
+    void persistsCompanionBoardThroughFlywaySchema() {
+        Deck deck = new Deck(1L, "Companion deck", Format.MODERN);
+        deck.addCard(new DeckCard(UUID.randomUUID(), 1, BoardType.COMPANION));
+        deckRepository.saveAndFlush(deck);
+        entityManager.clear();
+        assertThat(deckRepository.findById(deck.getId()).orElseThrow().getCards().getFirst().getBoardType())
+                .isEqualTo(BoardType.COMPANION);
+    }
+
+    @Test
+    void databaseRejectsCompanionQuantityGreaterThanOne() {
+        Deck deck = new Deck(1L, "Companion deck", Format.MODERN);
+        deck.addCard(new DeckCard(UUID.randomUUID(), 2, BoardType.COMPANION));
+        assertThatThrownBy(() -> deckRepository.saveAndFlush(deck))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasStackTraceContaining("ck_deck_cards_companion_quantity");
+    }
+
     private Deck deckWithCard() {
         Deck deck = new Deck(1L, "Modern deck", Format.MODERN);
         deck.addCard(new DeckCard(UUID.randomUUID(), 4, BoardType.MAINBOARD));

@@ -51,7 +51,7 @@ public class DeckService {
                     Deck remaining = without(deck, existing);
                     if (remaining.getCards().stream().noneMatch(card -> card.getBoardType() == BoardType.COMMANDER)
                             && !remaining.getCards().isEmpty()) {
-                        throw new RuleViolationException("Remove mainboard cards before removing the last commander");
+                        throw new RuleViolationException("Remove mainboard and companion cards before removing the last commander");
                     }
                     validateCommanders(remaining);
                 }

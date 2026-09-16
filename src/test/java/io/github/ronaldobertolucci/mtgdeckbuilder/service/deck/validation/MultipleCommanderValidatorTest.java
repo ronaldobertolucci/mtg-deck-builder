@@ -19,7 +19,7 @@ class MultipleCommanderValidatorTest {
     UUID first=UUID.randomUUID(), second=UUID.randomUUID(), cardId=UUID.randomUUID();
     CommanderValidator validator() { return new CommanderValidator(new CardRuleOverrideService(), integration); }
     CardDetailsResponse card(UUID id, String text, List<String> colors) {
-        return new CardDetailsResponse(id,id.toString(),"Legendary Creature",text,colors,CardTestFixtures.legalities());
+        return new CardDetailsResponse(id,id.toString(),"Legendary Creature",text,colors,CardTestFixtures.legalities(), java.util.List.of());
     }
     void pair() {
         deck.addCard(new DeckCard(first,1,BoardType.COMMANDER));
@@ -65,7 +65,7 @@ class MultipleCommanderValidatorTest {
     @Test void bansApplyToBothCommanders() {
         pair();
         when(integration.fetchCardDetails(first)).thenReturn(card(first,"Partner",List.of()));
-        when(integration.fetchCardDetails(second)).thenReturn(new CardDetailsResponse(second,"Banned","Legendary Creature","Partner",List.of(),Map.of("commander",CardLegality.BANNED)));
+        when(integration.fetchCardDetails(second)).thenReturn(new CardDetailsResponse(second,"Banned","Legendary Creature","Partner",List.of(),Map.of("commander",CardLegality.BANNED), java.util.List.of()));
         assertThatThrownBy(() -> validator().validateCardAddition(deck,new DeckCard(cardId,1,BoardType.MAINBOARD),card(cardId,"",List.of())))
                 .isInstanceOf(RuleViolationException.class).hasMessageContaining("BANNED");
     }

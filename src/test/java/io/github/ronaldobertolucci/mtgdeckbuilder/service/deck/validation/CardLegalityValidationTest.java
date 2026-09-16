@@ -29,13 +29,13 @@ class CardLegalityValidationTest {
             UUID commanderId = UUID.randomUUID();
             deck.addCard(new DeckCard(commanderId, 1, BoardType.COMMANDER));
             lenient().when(integration.fetchCardDetails(commanderId)).thenReturn(new CardDetailsResponse(
-                    commanderId, "Commander", "Legendary Creature", "", List.of(), Map.of("commander", CardLegality.LEGAL)));
+                    commanderId, "Commander", "Legendary Creature", "", List.of(), Map.of("commander", CardLegality.LEGAL), java.util.List.of()));
         }
         return deck;
     }
     CardDetailsResponse details(Format format, CardLegality legality, String type, String text) {
         return new CardDetailsResponse(oracleId, "Example", type, text, List.of(),
-                Map.of(format.name().toLowerCase(Locale.ROOT), legality));
+                Map.of(format.name().toLowerCase(Locale.ROOT), legality), java.util.List.of());
     }
     void validate(Deck deck, CardDetailsResponse details, int quantity, BoardType board) {
         strategy(deck.getFormat()).validateCardAddition(deck, new DeckCard(oracleId, quantity, board), details);
@@ -93,7 +93,7 @@ class CardLegalityValidationTest {
         var deck = deck(format);
         for (var legalities : Arrays.asList(null, Map.<String, CardLegality>of(),
                 Map.of("vintage", CardLegality.LEGAL), Map.of(format.name(), CardLegality.UNKNOWN))) {
-            var card = new CardDetailsResponse(oracleId, "Example", "Creature", "", List.of(), legalities);
+            var card = new CardDetailsResponse(oracleId, "Example", "Creature", "", List.of(), legalities, java.util.List.of());
             assertThatThrownBy(() -> validate(deck, card, 1, BoardType.MAINBOARD))
                     .isInstanceOf(RuleViolationException.class).hasMessageContaining("UNKNOWN");
         }
@@ -101,7 +101,7 @@ class CardLegalityValidationTest {
 
     @Test void legalityIsSelectedForTheDeckFormatAndKeysAreCaseInsensitive() {
         var card = new CardDetailsResponse(oracleId, "Example", "Creature", "", List.of(),
-                Map.of("MODERN", CardLegality.BANNED, "LEGACY", CardLegality.LEGAL));
+                Map.of("MODERN", CardLegality.BANNED, "LEGACY", CardLegality.LEGAL), java.util.List.of());
         assertThatThrownBy(() -> validate(deck(Format.MODERN), card, 1, BoardType.MAINBOARD)).isInstanceOf(RuleViolationException.class);
         assertThatCode(() -> validate(deck(Format.LEGACY), card, 4, BoardType.MAINBOARD)).doesNotThrowAnyException();
     }
