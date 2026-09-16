@@ -31,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(DeckController.class)
 @Import(SecurityConfigurations.class)
 class DeckControllerTest {
+    @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService exportService;
     @Autowired MockMvc mvc;
     @MockitoBean DeckService service;
     @MockitoBean TokenService tokenService;
@@ -45,6 +46,37 @@ class DeckControllerTest {
     }
     private DeckResponse response() {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
+    }
+
+    @Test void exportsArenaByDefaultWithAuthenticatedOwner() throws Exception {
+        when(exportService.exportDeck(deckId, io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat.ARENA, 42L))
+                .thenReturn(new ExportDeckResponse("Deck\n20 Island"));
+        mvc.perform(get("/api/decks/{id}/export", deckId).contextPath("/api").with(owner()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("Deck\n20 Island"));
+    }
+
+    @Test void exportsPlainTextWhenRequested() throws Exception {
+        when(exportService.exportDeck(deckId, io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat.PLAIN_TEXT, 42L))
+                .thenReturn(new ExportDeckResponse("20 Island"));
+        mvc.perform(get("/decks/{id}/export", deckId).param("format", "PLAIN_TEXT").with(owner()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("20 Island"));
+    }
+
+    @Test void exportOfMissingOrUnownedDeckReturns404() throws Exception {
+        when(exportService.exportDeck(any(), any(), eq(42L)))
+                .thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        mvc.perform(get("/decks/{id}/export", deckId).with(owner())).andExpect(status().isNotFound());
+    }
+
+    @Test void rejectsInvalidExportFormat() throws Exception {
+        mvc.perform(get("/decks/{id}/export", deckId).param("format", "UNKNOWN").with(owner()))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(exportService);
+    }
+
+    @Test void exportRequiresAuthentication() throws Exception {
+        mvc.perform(get("/decks/{id}/export", deckId)).andExpect(status().isForbidden());
+        verifyNoInteractions(exportService);
     }
 
     @Test void importsDeckWithAuthenticatedUserAndApiLocation() throws Exception {

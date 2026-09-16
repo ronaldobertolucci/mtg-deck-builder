@@ -241,6 +241,26 @@ Use o token nas próximas requisições.
 
 ## Criação e edição de decks
 
+### Exportar deck
+
+`GET /api/decks/{deckId}/export?format=ARENA` retorna HTTP 200 com `ExportDeckResponse`:
+
+```json
+{
+  "content": "Commander\n1 Ghalta, Primal Hunger\n\nDeck\n99 Forest"
+}
+```
+
+O parâmetro `format` é opcional e aceita `ARENA` (padrão) ou `PLAIN_TEXT`.
+Arena usa os blocos Commander, Companion, Deck e Sideboard, omitindo zonas vazias.
+Texto puro começa pelo Mainboard sem cabeçalho; Commander, Companion e Sideboard
+mantêm cabeçalhos para preservar suas zonas. Blocos são separados por uma linha
+em branco, sem quebra de linha final. As cartas são ordenadas por nome dentro de cada zona.
+
+Exige autenticação e propriedade do deck; deck inexistente ou de outro usuário
+retorna 404. O serviço resolve nomes por oracle ID no Card Manager usando o cache
+existente. Um deck vazio retorna `content` vazio; a exportação não altera nem analisa o deck.
+
 ### Importar deck de texto
 
 `POST /api/decks/import` recebe o nome, formato e texto da lista:

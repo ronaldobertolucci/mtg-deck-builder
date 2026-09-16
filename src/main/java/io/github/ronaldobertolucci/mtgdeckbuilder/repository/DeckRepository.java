@@ -17,5 +17,7 @@ public interface DeckRepository extends JpaRepository<Deck, UUID> {
     @Query("select d from Deck d where d.id = :id and d.userId = :userId")
     Optional<Deck> findOwnedForUpdate(@Param("id") UUID id, @Param("userId") Long userId);
 
+    Optional<Deck> findByIdAndUserId(UUID id, Long userId);
+
     Page<Deck> findByUserId(Long userId, Pageable pageable);
 }
