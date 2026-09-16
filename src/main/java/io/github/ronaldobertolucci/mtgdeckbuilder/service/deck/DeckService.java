@@ -66,6 +66,7 @@ public class DeckService {
             if (existing == null) deck.addCard(candidate);
             else existing.setQuantity(request.quantity());
         }
+        deck.invalidateAnalysis();
         return DeckResponse.from(repository.saveAndFlush(deck));
     }
 

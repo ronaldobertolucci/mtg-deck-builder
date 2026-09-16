@@ -58,6 +58,19 @@ class DeckServiceTest {
         assertThat(existing.getQuantity()).isEqualTo(2);
         assertThat(deck.getCards()).containsExactly(existing);
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, 2, 4})
+    void modificationInvalidatesAnalysis(int quantity) {
+        owned(); saved();
+        if (quantity != 0) details();
+        deck.addCard(new DeckCard(oracleId, 1, BoardType.MAINBOARD));
+        deck.recordAnalysis(DeckStatus.REGULAR, java.time.Instant.now(), List.of("Old result"));
+        var result = service.upsertCard(42L, deckId, request(quantity));
+        assertThat(result.status()).isEqualTo(DeckStatus.UNDEFINED);
+        assertThat(result.analyzedAt()).isNull();
+        assertThat(result.analysisMessages()).isEmpty();
+    }
+
     @Test void addsNewCard() {
         owned(); saved(); details();
         var response = service.upsertCard(42L, deckId, request(4));

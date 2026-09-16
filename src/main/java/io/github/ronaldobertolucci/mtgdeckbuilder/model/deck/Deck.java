@@ -46,6 +46,34 @@ public class Deck {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private DeckStatus status = DeckStatus.UNDEFINED;
+
+    private Instant analyzedAt;
+
+    @ElementCollection
+    @CollectionTable(name = "deck_analysis_messages", joinColumns = @JoinColumn(name = "deck_id"))
+    @OrderColumn(name = "position")
+    @Column(name = "message", nullable = false, length = 2000)
+    @Getter(AccessLevel.NONE)
+    private List<String> analysisMessages = new ArrayList<>();
+
+    public List<String> getAnalysisMessages() { return List.copyOf(analysisMessages); }
+
+    public void recordAnalysis(DeckStatus status, Instant at, List<String> messages) {
+        this.status = Objects.requireNonNull(status);
+        this.analyzedAt = Objects.requireNonNull(at);
+        this.analysisMessages.clear();
+        this.analysisMessages.addAll(messages);
+    }
+
+    public void invalidateAnalysis() {
+        status = DeckStatus.UNDEFINED;
+        analyzedAt = null;
+        analysisMessages.clear();
+    }
+
     @OneToMany(mappedBy = "deck", cascade = CascadeType.ALL, orphanRemoval = true)
     @Getter(AccessLevel.NONE)
     private List<DeckCard> cards = new ArrayList<>();

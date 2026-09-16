@@ -49,6 +49,18 @@ class CardIntegrationServiceTest {
     @Autowired
     private CacheManager cacheManager;
 
+    @Test
+    void refreshBypassesAndUpdatesCache() {
+        expectCard(ORACLE_ID);
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("{\"oracle_id\":\"" + ORACLE_ID + "\",\"legalities\":{\"modern\":\"banned\"}}", MediaType.APPLICATION_JSON));
+        service.fetchCardDetails(ORACLE_ID);
+        var refreshed = service.refreshCardDetails(ORACLE_ID);
+        assertThat(refreshed.legalities()).containsEntry("modern", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED);
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isEqualTo(refreshed);
+        server.verify();
+    }
+
     @BeforeEach
     void clearCache() {
         cacheManager.getCache("cards").clear();

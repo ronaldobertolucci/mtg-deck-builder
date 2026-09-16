@@ -55,6 +55,26 @@ class DeckRepositoryTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
+    void persistsAndInvalidatesAnalysis() {
+        Deck deck = deckWithCard();
+        var at = java.time.Instant.parse("2026-09-15T12:00:00Z");
+        deck.recordAnalysis(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.IRREGULAR, at, java.util.List.of("First", "Second"));
+        deckRepository.saveAndFlush(deck);
+        entityManager.clear();
+        Deck reloaded = deckRepository.findById(deck.getId()).orElseThrow();
+        assertThat(reloaded.getAnalysisMessages()).containsExactly("First", "Second");
+        assertThat(reloaded.getAnalyzedAt()).isEqualTo(at);
+        assertThat(reloaded.getStatus()).isEqualTo(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.IRREGULAR);
+        reloaded.invalidateAnalysis();
+        deckRepository.saveAndFlush(reloaded);
+        entityManager.clear();
+        reloaded = deckRepository.findById(deck.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED);
+        assertThat(reloaded.getAnalysisMessages()).isEmpty();
+        assertThat(reloaded.getAnalyzedAt()).isNull();
+    }
+
+    @Test
     void saveDeckPersistsCardsInCascade() {
         Deck deck = deckWithCard();
         DeckCard card = deck.getCards().getFirst();

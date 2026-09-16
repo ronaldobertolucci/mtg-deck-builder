@@ -27,6 +27,15 @@ public class CardIntegrationService {
 
     @Cacheable(value = "cards", key = "#oracleId")
     public CardDetailsResponse fetchCardDetails(UUID oracleId) {
+        return requestCardDetails(oracleId);
+    }
+
+    @org.springframework.cache.annotation.CachePut(value = "cards", key = "#oracleId")
+    public CardDetailsResponse refreshCardDetails(UUID oracleId) {
+        return requestCardDetails(oracleId);
+    }
+
+    private CardDetailsResponse requestCardDetails(UUID oracleId) {
         if (!properties.isOracleLookupConfigured()) {
             throw new CardManagerUnavailableException(
                     "Card Manager oracle lookup is not configured: define services.card-manager.url "

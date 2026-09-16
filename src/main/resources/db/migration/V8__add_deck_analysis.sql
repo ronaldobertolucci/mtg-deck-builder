@@ -1,0 +1,9 @@
+ALTER TABLE decks ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'UNDEFINED';
+ALTER TABLE decks ADD COLUMN analyzed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE decks ADD CONSTRAINT ck_decks_status CHECK (status IN ('REGULAR', 'IRREGULAR', 'UNDEFINED'));
+CREATE TABLE deck_analysis_messages (
+    deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    message VARCHAR(2000) NOT NULL,
+    PRIMARY KEY (deck_id, position)
+);
