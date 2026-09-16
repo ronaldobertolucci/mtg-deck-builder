@@ -47,6 +47,26 @@ class DeckControllerTest {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
     }
 
+    @Test void importsDeckWithAuthenticatedUserAndApiLocation() throws Exception {
+        when(service.importDeck(eq(42L), any())).thenReturn(response());
+        mvc.perform(post("/api/decks/import").contextPath("/api").with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Modern","format":"MODERN","rawText":"4 Lightning Bolt"}
+                        """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "http://localhost/api/decks/" + deckId));
+        verify(service).importDeck(42L, new ImportDeckRequest("Modern", Format.MODERN, "4 Lightning Bolt"));
+    }
+
+    @Test void rejectsBlankImportText() throws Exception {
+        mvc.perform(post("/decks/import").with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Modern","format":"MODERN","rawText":" "}
+                        """))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
     @Test void createsDeckWithAuthenticatedUserId() throws Exception {
         when(service.create(eq(42L), any())).thenReturn(response());
         mvc.perform(post("/decks").with(owner()).contentType(MediaType.APPLICATION_JSON)

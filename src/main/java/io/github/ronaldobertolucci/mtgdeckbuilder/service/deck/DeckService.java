@@ -1,6 +1,7 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.*;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
@@ -9,6 +10,7 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.Format
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.HashMap;
 import java.util.UUID;
 
 @Service
@@ -17,12 +19,41 @@ public class DeckService {
     private final DeckRepository repository;
     private final CardIntegrationService integration;
     private final List<FormatValidatorStrategy> strategies;
+    private final DeckImportParserService parser;
 
     public DeckService(DeckRepository repository, CardIntegrationService integration,
-                       List<FormatValidatorStrategy> strategies) {
+                       List<FormatValidatorStrategy> strategies, DeckImportParserService parser) {
         this.repository = repository;
         this.integration = integration;
         this.strategies = strategies;
+        this.parser = parser;
+    }
+
+    @Transactional
+    public DeckResponse importDeck(Long userId, ImportDeckRequest request) {
+        Deck deck = repository.saveAndFlush(new Deck(userId, request.name(), request.format()));
+        var cards = parser.parse(request.rawText());
+        var detailsById = new HashMap<UUID, CardDetailsResponse>();
+        for (ParsedDeckCard card : cards) {
+            var details = integration.fetchCardDetailsByName(card.name());
+            detailsById.put(details.oracleId(), details);
+            DeckCard existing = deck.getCards().stream()
+                    .filter(value -> value.getOracleId().equals(details.oracleId())
+                            && value.getBoardType() == card.boardType())
+                    .findFirst().orElse(null);
+            long total = (long) card.quantity() + (existing == null ? 0 : existing.getQuantity());
+            if (total > Integer.MAX_VALUE) throw new RuleViolationException("Card quantity is too large: " + card.name());
+            DeckCard candidate = new DeckCard(details.oracleId(), (int) total, card.boardType());
+            if (existing == null) deck.addCard(candidate);
+            else existing.setQuantity(candidate.getQuantity());
+        }
+        // Validate against the complete import so commander pairs and colors are independent of text order.
+        for (DeckCard card : deck.getCards()) {
+            validator(deck).validateCardAddition(without(deck, card),
+                    new DeckCard(card.getOracleId(), card.getQuantity(), card.getBoardType()),
+                    detailsById.get(card.getOracleId()));
+        }
+        return DeckResponse.from(repository.saveAndFlush(deck));
     }
 
     public DeckResponse create(Long userId, CreateDeckRequest request) {

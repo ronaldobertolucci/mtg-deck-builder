@@ -4,13 +4,17 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.config.CardManagerProperties;
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardManagerUnavailableException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardNotFoundException;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -33,6 +37,30 @@ public class CardIntegrationService {
     @org.springframework.cache.annotation.CachePut(value = "cards", key = "#oracleId")
     public CardDetailsResponse refreshCardDetails(UUID oracleId) {
         return requestCardDetails(oracleId);
+    }
+
+    @Cacheable(value = "cards_by_name", key = "#name")
+    public CardDetailsResponse fetchCardDetailsByName(String name) {
+        if (!StringUtils.hasText(properties.url())) {
+            throw new CardManagerUnavailableException("Card Manager URL is not configured", null);
+        }
+        try {
+            List<CardDetailsResponse> cards = restClient.get()
+                    .uri("/cards/search?lang=en&name_exact={name}&limit=1", name)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<CardDetailsResponse>>() {});
+            if (cards == null) {
+                throw new CardManagerUnavailableException("Card Manager returned an empty response", null);
+            }
+            if (cards.isEmpty()) {
+                throw new RuleViolationException("Card not found by name: " + name);
+            }
+            return cards.getFirst();
+        } catch (HttpClientErrorException.NotFound ex) {
+            throw new RuleViolationException("Card not found by name: " + name);
+        } catch (RestClientException ex) {
+            throw new CardManagerUnavailableException("Card Manager is unavailable", ex);
+        }
     }
 
     private CardDetailsResponse requestCardDetails(UUID oracleId) {

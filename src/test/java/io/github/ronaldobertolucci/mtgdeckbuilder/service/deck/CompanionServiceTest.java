@@ -21,7 +21,7 @@ class CompanionServiceTest {
     @Mock CardIntegrationService integration;
     UUID deckId=UUID.randomUUID(),id=UUID.randomUUID();
     Deck deck=new Deck(1L,"Test",Format.MODERN);
-    DeckService service() {return new DeckService(repository,integration,List.of(new Constructed60Validator(new CardRuleOverrideService()),new CommanderValidator(new CardRuleOverrideService(),integration)));}
+    DeckService service() {return new DeckService(repository,integration,List.of(new Constructed60Validator(new CardRuleOverrideService()),new CommanderValidator(new CardRuleOverrideService(),integration)), new DeckImportParserService());}
     void owned() {when(repository.findOwnedForUpdate(deckId,1L)).thenReturn(Optional.of(deck));}
     void save() {when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));}
     CardDetailsResponse companion(UUID oracleId) {return new CardDetailsResponse(oracleId,"Companion","Creature","",List.of("R"),CardTestFixtures.legalities(),List.of("Companion"));}

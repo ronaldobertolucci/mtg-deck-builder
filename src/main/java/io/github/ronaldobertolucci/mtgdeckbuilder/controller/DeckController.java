@@ -24,6 +24,15 @@ public class DeckController {
         return ResponseEntity.created(location).body(deck);
     }
 
+    @PostMapping("/import")
+    public ResponseEntity<DeckResponse> importDeck(@AuthenticationPrincipal User user,
+                                                   @Valid @RequestBody ImportDeckRequest request) {
+        DeckResponse deck = service.importDeck(user.getId(), request);
+        var location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/decks/{id}").buildAndExpand(deck.id()).toUri();
+        return ResponseEntity.created(location).body(deck);
+    }
+
     @PutMapping("/{deckId}/cards")
     public DeckResponse upsertCard(@AuthenticationPrincipal User user, @PathVariable UUID deckId,
                                   @Valid @RequestBody UpsertDeckCardRequest request) {

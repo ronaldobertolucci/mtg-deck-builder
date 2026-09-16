@@ -64,6 +64,7 @@ class CardIntegrationServiceTest {
     @BeforeEach
     void clearCache() {
         cacheManager.getCache("cards").clear();
+        cacheManager.getCache("cards_by_name").clear();
     }
 
     @Test
@@ -185,6 +186,72 @@ class CardIntegrationServiceTest {
         var card = service.fetchCardDetails(ORACLE_ID);
         if (scenario.equals("present")) assertThat(card.keywords()).containsExactly("Companion", "Vigilance");
         else assertThat(card.keywords()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void exactNameSearchExtractsFirstItemAndCachesExactCase() {
+        server.expect(once(), requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"},
+                         {"oracle_id":"%s","name":"Other","type_line":"Instant"}]
+                        """.formatted(ORACLE_ID, UUID.randomUUID()), MediaType.APPLICATION_JSON));
+        var first = service.fetchCardDetailsByName("Lightning Bolt");
+        assertThat(first.oracleId()).isEqualTo(ORACLE_ID);
+        assertThat(first.name()).isEqualTo("Lightning Bolt");
+        assertThat(service.fetchCardDetailsByName("Lightning Bolt")).isEqualTo(first);
+        assertThat(cacheManager.getCache("cards_by_name").get("Lightning Bolt").get()).isEqualTo(first);
+        assertThat(cacheManager.getCache("cards").get(ORACLE_ID)).isNull();
+        server.verify();
+    }
+
+    @Test
+    void differentlyCasedNameDoesNotReuseCachedExactMatch() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+                .andRespond(withSuccess("""
+                        [{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}]
+                        """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=lightning%20bolt&limit=1"))
+                .andRespond(withResourceNotFound());
+
+        var card = service.fetchCardDetailsByName("Lightning Bolt");
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("lightning bolt"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("lightning bolt")).isNull();
+        assertThat(service.fetchCardDetailsByName("Lightning Bolt")).isEqualTo(card);
+        server.verify();
+    }
+
+    @Test
+    void emptyNameSearchThrowsRuleViolationAndIsNotCached() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessageContaining("Missing");
+        assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void exactNameNotFoundThrowsRuleViolationAndIsNotCached() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+                .andRespond(withResourceNotFound());
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessage("Card not found by name: Missing");
+        assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void nameSearchServerFailureIsNotCached() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+                .andRespond(withServerError());
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
         server.verify();
     }
 

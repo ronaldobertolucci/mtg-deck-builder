@@ -241,6 +241,33 @@ Use o token nas próximas requisições.
 
 ## Criação e edição de decks
 
+### Importar deck de texto
+
+`POST /api/decks/import` recebe o nome, formato e texto da lista:
+
+```json
+{
+  "name": "Meu deck Modern",
+  "format": "MODERN",
+  "rawText": "Deck\n4 Lightning Bolt (M11) 146\nSideboard\n2 Duress"
+}
+```
+
+Requer autenticação e retorna `201 Created`, `Location` e o deck com suas cartas.
+Cada linha usa `quantidade nome`; os dados de coleção do Arena são descartados.
+Os cabeçalhos `Deck`, `Maindeck`, `Sideboard`, `Commander` e `Companion` aceitam
+maiúsculas/minúsculas e dois-pontos opcionais. Sem cabeçalho, a zona é MAINBOARD.
+Linhas vazias são ignoradas; linhas inválidas e quantidades não positivas são rejeitadas.
+Linhas repetidas da mesma carta e zona têm as quantidades somadas.
+
+A busca por nome usa `/cards/search?lang=en&name_exact={name}&limit=1` no Card Manager,
+o primeiro resultado e o cache exclusivo `cards_by_name`, cuja chave preserva maiúsculas e minúsculas.
+O nome deve corresponder exatamente à grafia no Card Manager (por exemplo, `Lightning Bolt`, não `lightning bolt`). As regras existentes do
+formato são aplicadas; qualquer falha desfaz toda a importação, incluindo o deck.
+O deck permanece com status UNDEFINED até a análise.
+Na busca por nome, HTTP 404 do Card Manager é tratado como carta não encontrada e
+retorna 422 com o nome informado. Falhas de conexão e respostas 5xx retornam 503.
+
 ### Criar deck
 
 ```http
@@ -404,7 +431,7 @@ com `Content-Type: application/problem+json`:
 | Status | Motivo |
 | --- | --- |
 | 400 Bad Request | Corpo, tipo ou campos inválidos; erros de Bean Validation incluem `errors` com campo e mensagem. |
-| 404 Not Found | Deck inexistente/não pertencente ao usuário ou carta não encontrada na integração. |
+| 404 Not Found | Deck inexistente/não pertencente ao usuário ou carta não encontrada por oracle ID. Na importação por nome, carta não encontrada retorna 422. |
 | 422 Unprocessable Entity | Violação de regra ao criar ou editar o deck. |
 | 503 Service Unavailable | Card Manager indisponível durante criação ou edição. |
 

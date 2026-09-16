@@ -26,7 +26,7 @@ class DeckServiceTest {
     @BeforeEach void setup() {
         var overrides = new CardRuleOverrideService();
         service = new DeckService(repository, integration, List.of(new Constructed60Validator(overrides),
-                new CommanderValidator(overrides, integration)));
+                new CommanderValidator(overrides, integration)), new DeckImportParserService());
     }
     void owned() { when(repository.findOwnedForUpdate(deckId, 42L)).thenReturn(Optional.of(deck)); }
     void saved() { when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0)); }

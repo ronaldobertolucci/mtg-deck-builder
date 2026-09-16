@@ -21,7 +21,7 @@ class MultipleCommanderServiceTest {
     @Mock CardIntegrationService integration;
     @Mock DeckRepository repository;
     UUID first=UUID.randomUUID(),second=UUID.randomUUID(),cardId=UUID.randomUUID(),deckId=UUID.randomUUID();
-    DeckService service() { return new DeckService(repository,integration,List.of(new CommanderValidator(new CardRuleOverrideService(),integration))); }
+    DeckService service() { return new DeckService(repository,integration,List.of(new CommanderValidator(new CardRuleOverrideService(),integration)), new DeckImportParserService()); }
     CardDetailsResponse card(UUID id,String type,String text,List<String> colors) {
         return new CardDetailsResponse(id,id.toString(),type,text,colors,CardTestFixtures.legalities(), java.util.List.of());
     }
