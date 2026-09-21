@@ -32,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(SecurityConfigurations.class)
 class DeckControllerTest {
     @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService exportService;
+    @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckStatsService statsService;
     @Autowired MockMvc mvc;
     @MockitoBean DeckService service;
     @MockitoBean TokenService tokenService;
@@ -46,6 +47,34 @@ class DeckControllerTest {
     }
     private DeckResponse response() {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
+    }
+
+    @Test void returnsStatsForAuthenticatedOwner() throws Exception {
+        when(statsService.getDeckStats(deckId, 42L)).thenReturn(new DeckStatsResponse(4, 2.67,
+                java.util.Map.of("0", 0, "7+", 1), java.util.Map.of("Creature", 3, "Land", 1),
+                java.util.Map.of("BLUE", 6), java.util.Map.of("RARE", 4)));
+        mvc.perform(get("/api/decks/{id}/stats", deckId).contextPath("/api").with(owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCards").value(4))
+                .andExpect(jsonPath("$.averageCmc").value(2.67))
+                .andExpect(jsonPath("$.manaCurve['7+']").value(1))
+                .andExpect(jsonPath("$.typeDistribution.Creature").value(3))
+                .andExpect(jsonPath("$.colorPips.BLUE").value(6))
+                .andExpect(jsonPath("$.rarityDistribution.RARE").value(4));
+        verify(statsService).getDeckStats(deckId, 42L);
+    }
+
+    @Test void statsOfMissingOrUnownedDeckReturns404() throws Exception {
+        when(statsService.getDeckStats(deckId, 42L))
+                .thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        mvc.perform(get("/api/decks/{id}/stats", deckId).contextPath("/api").with(owner()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void statsRequireAuthentication() throws Exception {
+        mvc.perform(get("/api/decks/{id}/stats", deckId).contextPath("/api"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(statsService);
     }
 
     @Test void exportsArenaByDefaultWithAuthenticatedOwner() throws Exception {

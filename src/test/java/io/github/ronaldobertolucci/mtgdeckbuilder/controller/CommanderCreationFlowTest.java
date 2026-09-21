@@ -41,6 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockRestServiceServer
 class CommanderCreationFlowTest {
     @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService exportService;
+    @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckStatsService statsService;
     @Autowired MockMvc mvc;
     @Autowired MockRestServiceServer server;
     @Autowired CacheManager cacheManager;

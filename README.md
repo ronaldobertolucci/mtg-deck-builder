@@ -241,6 +241,28 @@ Use o token nas próximas requisições.
 
 ## Criação e edição de decks
 
+### Estatísticas do deck
+
+`GET /api/decks/{deckId}/stats` retorna HTTP 200 com `totalCards`, `averageCmc`,
+`manaCurve`, `typeDistribution`, `colorPips` e `rarityDistribution`. Exige autenticação
+e propriedade do deck; deck inexistente ou de outro usuário retorna 404.
+
+Somente MAINBOARD e COMMANDER participam das estatísticas, com contagens ponderadas
+pela quantidade de cópias. Terrenos entram no total, nos tipos e nas raridades,
+mas ficam fora da curva, dos pips e do CMC médio. A média usa o CMC original e é
+arredondada para duas casas decimais; sem cartas não-terreno, retorna zero.
+A curva arredonda o CMC para inteiro e contém sempre `0` a `6` e `7+`.
+
+Cada carta pertence a um único tipo, seguindo a prioridade Land, Creature,
+Planeswalker, Instant, Sorcery, Artifact, Enchantment e Other. Os pips contam
+cada ocorrência de W, U, B, R, G e C por bloco `{...}` do custo de mana, uma vez
+por cor no bloco e multiplicada pela quantidade de cópias, com chaves WHITE,
+BLUE, BLACK, RED, GREEN e COLORLESS. Híbridos contam para ambas as cores:
+`{G/W}` soma GREEN e WHITE; `{B/P}` soma BLACK; `{2/W}` soma WHITE e `{C}` soma
+COLORLESS. Blocos genéricos como `{1}`, `{2}` e `{X}` não somam pips. As raridades usam COMMON,
+UNCOMMON, RARE e MYTHIC. Todas as categorias são inicializadas com zero.
+Os metadados são consultados pelo oracle ID, aproveitando o cache do Card Manager.
+
 ### Exportar deck
 
 `GET /api/decks/{deckId}/export?format=ARENA` retorna HTTP 200 com `ExportDeckResponse`:

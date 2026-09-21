@@ -22,8 +22,18 @@ public record CardDetailsResponse(
         @JsonProperty("color_identity")
         List<String> colorIdentity,
         Map<String, CardLegality> legalities,
-        List<String> keywords
+        List<String> keywords,
+        Double cmc,
+        @JsonProperty("mana_cost")
+        String manaCost,
+        String rarity
 ) {
+    public CardDetailsResponse(UUID oracleId, String name, String typeLine, String oracleText,
+                               List<String> colorIdentity, Map<String, CardLegality> legalities,
+                               List<String> keywords) {
+        this(oracleId, name, typeLine, oracleText, colorIdentity, legalities, keywords, null, null, null);
+    }
+
     public CardDetailsResponse {
         keywords = keywords == null ? List.of() : List.copyOf(keywords);
         legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(

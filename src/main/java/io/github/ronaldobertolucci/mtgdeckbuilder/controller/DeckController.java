@@ -2,6 +2,7 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.controller;
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.user.User;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckService;
+import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckStatsService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat;
 import jakarta.validation.Valid;
@@ -16,9 +17,16 @@ import java.util.UUID;
 public class DeckController {
     private final DeckService service;
     private final DeckExportService exportService;
-    public DeckController(DeckService service, DeckExportService exportService) {
+    private final DeckStatsService statsService;
+    public DeckController(DeckService service, DeckExportService exportService, DeckStatsService statsService) {
         this.service = service;
         this.exportService = exportService;
+        this.statsService = statsService;
+    }
+
+    @GetMapping("/{deckId}/stats")
+    public DeckStatsResponse getDeckStats(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
+        return statsService.getDeckStats(deckId, user.getId());
     }
 
     @GetMapping("/{deckId}/export")

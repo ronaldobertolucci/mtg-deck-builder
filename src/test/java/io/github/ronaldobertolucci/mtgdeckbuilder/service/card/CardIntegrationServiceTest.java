@@ -78,6 +78,9 @@ class CardIntegrationServiceTest {
                 .containsEntry("standard", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.NOT_LEGAL)
                 .containsEntry("legacy", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.RESTRICTED)
                 .containsEntry("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED);
+        assertThat(card.cmc()).isEqualTo(1.0);
+        assertThat(card.manaCost()).isEqualTo("{R}");
+        assertThat(card.rarity()).isEqualTo("common");
         assertThat(card.name()).isEqualTo("Lightning Bolt");
         assertThat(card.typeLine()).isEqualTo("Instant");
         assertThat(card.oracleText()).isEqualTo("Lightning Bolt deals 3 damage to any target.");
@@ -262,6 +265,9 @@ class CardIntegrationServiceTest {
                         {
                           "oracle_id": "%s",
                           "name": "Lightning Bolt",
+                          "cmc": 1.0,
+                          "mana_cost": "{R}",
+                          "rarity": "common",
                           "type_line": "Instant",
                           "oracle_text": "Lightning Bolt deals 3 damage to any target.",
                           "color_identity": ["R"],
