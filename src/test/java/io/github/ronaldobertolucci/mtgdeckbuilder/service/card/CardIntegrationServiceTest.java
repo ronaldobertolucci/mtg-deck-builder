@@ -68,6 +68,19 @@ class CardIntegrationServiceTest {
     }
 
     @Test
+    void deserializesProducedManaAndKeepsItInCache() {
+        server.expect(once(), requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("""
+                        {"oracle_id":"%s","cmc":2.0,"produced_mana":["W","U","B","R","G"]}
+                        """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetails(ORACLE_ID);
+        assertThat(card.cmc()).isEqualTo(2.0);
+        assertThat(card.producedMana()).containsExactly("W", "U", "B", "R", "G");
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isSameAs(card);
+        server.verify();
+    }
+
+    @Test
     void fetchCardDetailsDeserializesSuccessfulResponse() {
         expectCard(ORACLE_ID);
 
@@ -79,6 +92,7 @@ class CardIntegrationServiceTest {
                 .containsEntry("legacy", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.RESTRICTED)
                 .containsEntry("commander", io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardLegality.BANNED);
         assertThat(card.cmc()).isEqualTo(1.0);
+        assertThat(card.producedMana()).isEmpty();
         assertThat(card.manaCost()).isEqualTo("{R}");
         assertThat(card.rarity()).isEqualTo("common");
         assertThat(card.name()).isEqualTo("Lightning Bolt");

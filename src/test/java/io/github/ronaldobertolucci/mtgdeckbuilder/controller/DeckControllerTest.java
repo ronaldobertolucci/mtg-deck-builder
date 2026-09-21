@@ -33,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DeckControllerTest {
     @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService exportService;
     @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckStatsService statsService;
+    @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.ManaSuggestionService manaSuggestionService;
     @Autowired MockMvc mvc;
     @MockitoBean DeckService service;
     @MockitoBean TokenService tokenService;
@@ -47,6 +48,55 @@ class DeckControllerTest {
     }
     private DeckResponse response() {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
+    }
+
+    @Test void suggests36LandsByDefaultForAuthenticatedOwner() throws Exception {
+        when(manaSuggestionService.suggestManaBase(deckId, 42L, 36))
+                .thenReturn(new ManaSuggestionResponse(java.util.Map.of("WHITE", 0, "BLUE", 18,
+                        "BLACK", 0, "RED", 0, "GREEN", 18)));
+        mvc.perform(get("/api/decks/{id}/mana-suggestion", deckId).contextPath("/api").with(owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.suggestedBasicLands.BLUE").value(18))
+                .andExpect(jsonPath("$.suggestedBasicLands.GREEN").value(18))
+                .andExpect(jsonPath("$.suggestedBasicLands.WHITE").value(0));
+        verify(manaSuggestionService).suggestManaBase(deckId, 42L, 36);
+    }
+
+    @ParameterizedTest @ValueSource(ints = {0, 24, 40})
+    void acceptsCustomManaTargetAndEmptySuggestion(int target) throws Exception {
+        when(manaSuggestionService.suggestManaBase(deckId, 42L, target))
+                .thenReturn(new ManaSuggestionResponse(java.util.Map.of()));
+        mvc.perform(get("/api/decks/{id}/mana-suggestion", deckId).contextPath("/api")
+                        .param("targetLands", Integer.toString(target)).with(owner()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.suggestedBasicLands").isEmpty());
+        verify(manaSuggestionService).suggestManaBase(deckId, 42L, target);
+    }
+
+    @Test void manaSuggestionRequiresAuthentication() throws Exception {
+        mvc.perform(get("/api/decks/{id}/mana-suggestion", deckId).contextPath("/api"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(manaSuggestionService);
+    }
+
+    @Test void manaSuggestionOfMissingOrUnownedDeckReturns404() throws Exception {
+        when(manaSuggestionService.suggestManaBase(deckId, 42L, 36))
+                .thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        mvc.perform(get("/api/decks/{id}/mana-suggestion", deckId).contextPath("/api").with(owner()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void negativeManaTargetReturns400() throws Exception {
+        when(manaSuggestionService.suggestManaBase(deckId, 42L, -1))
+                .thenThrow(new IllegalArgumentException("targetLands must be non-negative"));
+        mvc.perform(get("/decks/{id}/mana-suggestion", deckId).param("targetLands", "-1").with(owner()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"abc", "1.5", "2147483648"})
+    void rejectsMalformedManaTarget(String target) throws Exception {
+        mvc.perform(get("/decks/{id}/mana-suggestion", deckId).param("targetLands", target).with(owner()))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(manaSuggestionService);
     }
 
     @Test void returnsStatsForAuthenticatedOwner() throws Exception {

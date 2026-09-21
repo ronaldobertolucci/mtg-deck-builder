@@ -263,6 +263,30 @@ COLORLESS. Blocos genéricos como `{1}`, `{2}` e `{X}` não somam pips. As rarid
 UNCOMMON, RARE e MYTHIC. Todas as categorias são inicializadas com zero.
 Os metadados são consultados pelo oracle ID, aproveitando o cache do Card Manager.
 
+### Sugestão de base de mana
+
+`GET /api/decks/{deckId}/mana-suggestion?targetLands=36` retorna HTTP 200:
+
+```json
+{"suggestedBasicLands":{"WHITE":0,"BLUE":18,"BLACK":0,"RED":0,"GREEN":18}}
+```
+
+`targetLands` é inteiro, opcional (padrão 36) e não negativo; valores inválidos
+retornam 400. Exige autenticação e propriedade do deck, com 404 para deck
+inexistente ou de outro usuário. Usa os metadados em cache de MAINBOARD e COMMANDER.
+
+> Plataformas como EDHREC, Moxfield e Archidekt adotam 36 como a constante neutra padrão porque ela atende a maioria 
+esmagadora dos decks com curva de mana média entre 2.5 e 3.5.
+
+A demanda conta pips coloridos por cópia, incluindo ambas as cores dos híbridos.
+Terrenos não participam. Cada cor de `produced_mana` abate uma unidade por cópia
+somente para geradores não-terreno com `cmc >= 2`. Geradores com CMC menor que 2
+ou desconhecido não reduzem a demanda. A demanda líquida de cada cor nunca é negativa.
+O algoritmo do maior resto distribui exatamente `targetLands`, com desempate na
+ordem WHITE, BLUE, BLACK, RED, GREEN. Havendo demanda, todas essas chaves aparecem,
+inclusive as de quantidade zero. Sem demanda líquida, retorna
+`{"suggestedBasicLands":{}}`. A sugestão não modifica o deck.
+
 ### Exportar deck
 
 `GET /api/decks/{deckId}/export?format=ARENA` retorna HTTP 200 com `ExportDeckResponse`:

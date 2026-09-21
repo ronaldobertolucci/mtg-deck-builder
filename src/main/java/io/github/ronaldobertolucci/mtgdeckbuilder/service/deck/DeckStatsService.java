@@ -61,14 +61,14 @@ public class DeckStatsService {
         return new DeckStatsResponse(totalCards, average, curve, types, pips, rarities);
     }
 
-    private static void countManaPips(String manaCost, int quantity, Map<String, Integer> pips) {
+    static void countManaPips(String manaCost, int quantity, Map<String, Integer> pips) {
         if (manaCost == null) return;
         var matcher = MANA_SYMBOL.matcher(manaCost);
         while (matcher.find()) {
             String symbol = matcher.group(1);
             // Hybrid symbols contribute once to each represented color per copy.
             PIP_COLORS.forEach((pip, color) -> {
-                if (symbol.contains(pip)) pips.merge(color, quantity, Integer::sum);
+                if (symbol.contains(pip)) pips.computeIfPresent(color, (key, count) -> count + quantity);
             });
         }
     }

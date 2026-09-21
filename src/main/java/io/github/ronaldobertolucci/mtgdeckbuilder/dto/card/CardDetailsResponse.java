@@ -26,8 +26,16 @@ public record CardDetailsResponse(
         Double cmc,
         @JsonProperty("mana_cost")
         String manaCost,
-        String rarity
+        String rarity,
+        @JsonProperty("produced_mana")
+        List<String> producedMana
 ) {
+    public CardDetailsResponse(UUID oracleId, String name, String typeLine, String oracleText,
+                               List<String> colorIdentity, Map<String, CardLegality> legalities,
+                               List<String> keywords, Double cmc, String manaCost, String rarity) {
+        this(oracleId, name, typeLine, oracleText, colorIdentity, legalities, keywords, cmc, manaCost, rarity, null);
+    }
+
     public CardDetailsResponse(UUID oracleId, String name, String typeLine, String oracleText,
                                List<String> colorIdentity, Map<String, CardLegality> legalities,
                                List<String> keywords) {
@@ -35,6 +43,7 @@ public record CardDetailsResponse(
     }
 
     public CardDetailsResponse {
+        producedMana = producedMana == null ? List.of() : List.copyOf(producedMana);
         keywords = keywords == null ? List.of() : List.copyOf(keywords);
         legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(
                 Collectors.toUnmodifiableMap(entry -> entry.getKey().toLowerCase(Locale.ROOT),
