@@ -272,6 +272,102 @@ class CardIntegrationServiceTest {
         server.verify();
     }
 
+    @Test
+    void resolvesBatchesWithCamelCaseContractAndCachesIndividualPrintings() {
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        server.expect(requestTo(CARD_URL + "resolve")).andExpect(method(HttpMethod.POST))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.content().json(
+                        "{\"ids\":[\"" + first + "\"]}"))
+                .andRespond(withSuccess(resolvedJson(first), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "resolve")).andExpect(method(HttpMethod.POST))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.content().json(
+                        "{\"ids\":[\"" + second + "\"]}"))
+                .andRespond(withSuccess(resolvedJson(second), MediaType.APPLICATION_JSON));
+        assertThat(service.resolveCards(java.util.List.of(first, first))).singleElement()
+                .satisfies(c -> { assertThat(c.oracleId()).isEqualTo(ORACLE_ID); assertThat(c.isAccessory()).isTrue(); });
+        assertThat(service.resolveCards(java.util.List.of(first, second))).hasSize(2);
+        assertThat(service.resolveCards(java.util.List.of(second, first))).hasSize(2);
+        server.verify();
+    }
+
+    @Test
+    void incompleteResolutionFailsAndDoesNotCachePartialResults() {
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        server.expect(requestTo(CARD_URL + "resolve")).andRespond(withSuccess(resolvedJson(first), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "resolve")).andRespond(withSuccess(resolvedJson(first), MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.resolveCards(java.util.List.of(first, second)))
+                .isInstanceOf(CardManagerUnavailableException.class).hasMessageContaining("Incomplete");
+        assertThat(service.resolveCards(java.util.List.of(first))).hasSize(1);
+        server.verify();
+    }
+
+    @Test
+    void emptyResolutionMakesNoRequest() {
+        assertThat(service.resolveCards(java.util.List.of())).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void deserializesRelatedPrintingIdsAndLayout() {
+        UUID printing = UUID.randomUUID();
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("""
+                    {"oracle_id":"%s","layout":"normal","all_parts":[{"id":"%s","component":"token","name":"Token"}]}
+                    """.formatted(ORACLE_ID, printing), MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetails(ORACLE_ID);
+        assertThat(card.layout()).isEqualTo("normal");
+        assertThat(card.allParts()).extracting(io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.RelatedCard::id).containsExactly(printing);
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"[]", "[null]", "[{}]", "null"})
+    void rejectsIncompleteOrMalformedResolution(String response) {
+        server.expect(requestTo(CARD_URL + "resolve")).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.resolveCards(java.util.List.of(UUID.randomUUID())))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        server.verify();
+    }
+
+    @Test
+    void resolutionHttpFailureCanBeRetried() {
+        UUID id = UUID.randomUUID();
+        server.expect(requestTo(CARD_URL + "resolve")).andRespond(withServerError());
+        server.expect(requestTo(CARD_URL + "resolve")).andRespond(withSuccess(resolvedJson(id), MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.resolveCards(java.util.List.of(id))).isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(service.resolveCards(java.util.List.of(id))).hasSize(1);
+        server.verify();
+    }
+
+    @Test
+    void boundsResolutionPayloadToOneHundredIds() {
+        var ids = java.util.stream.IntStream.range(0, 101).mapToObj(i -> UUID.randomUUID()).toList();
+        for (var batch : java.util.List.of(ids.subList(0, 100), ids.subList(100, 101))) {
+            String request = "{\"ids\":[" + batch.stream().map(id -> "\"" + id + "\"").collect(java.util.stream.Collectors.joining(",")) + "]}";
+            String response = "[" + batch.stream().map(id -> resolvedJson(id).strip().substring(1, resolvedJson(id).strip().length() - 1))
+                    .collect(java.util.stream.Collectors.joining(",")) + "]";
+            server.expect(requestTo(CARD_URL + "resolve"))
+                    .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.content().json(request))
+                    .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        }
+        assertThat(service.resolveCards(ids)).hasSize(101);
+        server.verify();
+    }
+
+    @Test
+    void manualTokenNameSearchIncludesTokens() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Token&limit=1&include_tokens=true"))
+                .andRespond(withSuccess("[{\"oracle_id\":\"" + ORACLE_ID + "\",\"layout\":\"token\"}]", MediaType.APPLICATION_JSON));
+        assertThat(service.fetchAccessoryByName("Token").layout()).isEqualTo("token");
+        server.verify();
+    }
+
+    private String resolvedJson(UUID id) {
+        return """
+                [{"id":"%s","oracleId":"%s","name":"Token","layout":"token","typeLine":"Token Creature"}]
+                """.formatted(id, ORACLE_ID);
+    }
+
     private void expectCard(UUID oracleId) {
         server.expect(once(), requestTo(CARD_URL + oracleId + "?lang=en"))
                 .andExpect(method(HttpMethod.GET))

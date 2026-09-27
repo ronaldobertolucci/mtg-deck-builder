@@ -36,6 +36,11 @@ public class CommanderValidator implements FormatValidatorStrategy {
         if (newCard.getBoardType() == BoardType.SIDEBOARD) {
             throw new RuleViolationException("Commander decks do not support a sideboard");
         }
+        if (newCard.getBoardType() == BoardType.TOKENS) {
+            if (!io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.ResolvedCardResponse.isAccessory(cardDetails.layout(), cardDetails.typeLine()))
+                throw new RuleViolationException("Only accessories can be added to TOKENS");
+            return;
+        }
         CompanionRules.validateAddition(deck, newCard, cardDetails);
         long mainboard = count(deck, BoardType.MAINBOARD)
                 + (newCard.getBoardType() == BoardType.MAINBOARD ? newCard.getQuantity() : 0);

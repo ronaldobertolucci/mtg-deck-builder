@@ -22,6 +22,7 @@ public class ArenaExportFormatter implements DeckExportFormatterStrategy {
                 case COMPANION -> "Companion\n";
                 case MAINBOARD -> "Deck\n";
                 case SIDEBOARD -> "Sideboard\n";
+                case TOKENS -> "Tokens\n";
             };
             blocks.add(header + cards.stream().map(card -> card.quantity() + " " + card.name())
                     .collect(Collectors.joining("\n")));

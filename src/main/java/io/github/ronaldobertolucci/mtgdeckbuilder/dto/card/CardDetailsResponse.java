@@ -28,8 +28,16 @@ public record CardDetailsResponse(
         String manaCost,
         String rarity,
         @JsonProperty("produced_mana")
-        List<String> producedMana
+        List<String> producedMana,
+        String layout,
+        @JsonProperty("all_parts") List<RelatedCard> allParts
 ) {
+    public CardDetailsResponse(UUID oracleId, String name, String typeLine, String oracleText,
+                               List<String> colorIdentity, Map<String, CardLegality> legalities,
+                               List<String> keywords, Double cmc, String manaCost, String rarity, List<String> producedMana) {
+        this(oracleId, name, typeLine, oracleText, colorIdentity, legalities, keywords, cmc, manaCost, rarity, producedMana, null, List.of());
+    }
+
     public CardDetailsResponse(UUID oracleId, String name, String typeLine, String oracleText,
                                List<String> colorIdentity, Map<String, CardLegality> legalities,
                                List<String> keywords, Double cmc, String manaCost, String rarity) {
@@ -43,6 +51,7 @@ public record CardDetailsResponse(
     }
 
     public CardDetailsResponse {
+        allParts = allParts == null ? List.of() : List.copyOf(allParts);
         producedMana = producedMana == null ? List.of() : List.copyOf(producedMana);
         keywords = keywords == null ? List.of() : List.copyOf(keywords);
         legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(

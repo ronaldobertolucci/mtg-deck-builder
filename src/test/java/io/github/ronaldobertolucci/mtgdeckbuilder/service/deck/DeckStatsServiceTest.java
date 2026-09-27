@@ -41,12 +41,14 @@ class DeckStatsServiceTest {
         assertThat(stats.rarityDistribution()).isEqualTo(Map.of("COMMON", 10, "UNCOMMON", 0, "RARE", 2, "MYTHIC", 1));
     }
 
-    @Test void excludesSideboardAndCompanionBeforeFetchingMetadata() {
-        UUID side = UUID.randomUUID(), companion = UUID.randomUUID();
+    @Test void excludesSideboardCompanionAndTokensBeforeFetchingMetadata() {
+        UUID side = UUID.randomUUID(), companion = UUID.randomUUID(), token = UUID.randomUUID();
+        deck.addCard(new DeckCard(token, 1000, BoardType.TOKENS));
         deck.addCard(new DeckCard(side, 15, BoardType.SIDEBOARD));
         deck.addCard(new DeckCard(companion, 1, BoardType.COMPANION));
         add("Creature", 3.0, "{W}", "rare", 1, BoardType.COMMANDER);
         assertThat(stats().totalCards()).isEqualTo(1);
+        verify(integration, never()).fetchCardDetails(token);
         verify(integration, never()).fetchCardDetails(side);
         verify(integration, never()).fetchCardDetails(companion);
     }

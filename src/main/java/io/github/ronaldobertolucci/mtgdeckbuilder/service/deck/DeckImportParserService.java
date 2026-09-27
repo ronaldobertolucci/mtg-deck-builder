@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class DeckImportParserService {
-    private static final Pattern HEADER = Pattern.compile("(?i)^(Deck|Maindeck|Sideboard|Commander|Companion):?\\s*$");
+    private static final Pattern HEADER = Pattern.compile("(?i)^(Deck|Maindeck|Sideboard|Commander|Companion|Tokens):?\\s*$");
     private static final Pattern CARD = Pattern.compile("^(\\d+)\\s+(.+?)(?:\\s+\\([a-zA-Z0-9]{2,5}\\)\\s+.*)?$");
 
     public List<ParsedDeckCard> parse(String rawText) {
@@ -33,6 +33,7 @@ public class DeckImportParserService {
                     case "sideboard" -> BoardType.SIDEBOARD;
                     case "commander" -> BoardType.COMMANDER;
                     case "companion" -> BoardType.COMPANION;
+                    case "tokens" -> BoardType.TOKENS;
                     default -> throw new IllegalStateException("Unknown board header");
                 };
                 continue;

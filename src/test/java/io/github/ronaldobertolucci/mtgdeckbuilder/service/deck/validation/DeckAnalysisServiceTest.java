@@ -67,6 +67,13 @@ class DeckAnalysisServiceTest {
         if(pair) add(1,BoardType.COMMANDER,"Legendary Creature — Human","Partner",CardLegality.LEGAL,List.of("G"),List.of());
         basic(main,BoardType.MAINBOARD);
     }
+    @Test void tokensDoNotAffectCommanderLegalityOrFetchMetadata() {
+        commander(99, false);
+        UUID token = UUID.randomUUID();
+        deck.addCard(new DeckCard(token, 200, BoardType.TOKENS));
+        expect(DeckStatus.REGULAR);
+        verify(integration, never()).refreshCardDetails(token);
+    }
     @Test void regularCommander() { commander(99,false); expect(DeckStatus.REGULAR); }
     @Test void regularPair() { commander(98,true); expect(DeckStatus.REGULAR); }
     @Test void commanderIncomplete() { commander(98,false); expect(DeckStatus.IRREGULAR); }

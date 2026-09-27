@@ -20,6 +20,7 @@ public class DeckService {
     private final CardIntegrationService integration;
     private final List<FormatValidatorStrategy> strategies;
     private final DeckImportParserService parser;
+    private final DeckAccessoryService accessories;
 
     public DeckService(DeckRepository repository, CardIntegrationService integration,
                        List<FormatValidatorStrategy> strategies, DeckImportParserService parser) {
@@ -27,6 +28,7 @@ public class DeckService {
         this.integration = integration;
         this.strategies = strategies;
         this.parser = parser;
+        this.accessories = new DeckAccessoryService(integration);
     }
 
     @Transactional
@@ -35,7 +37,8 @@ public class DeckService {
         var cards = parser.parse(request.rawText());
         var detailsById = new HashMap<UUID, CardDetailsResponse>();
         for (ParsedDeckCard card : cards) {
-            var details = integration.fetchCardDetailsByName(card.name());
+            var details = card.boardType() == BoardType.TOKENS
+                    ? integration.fetchAccessoryByName(card.name()) : integration.fetchCardDetailsByName(card.name());
             detailsById.put(details.oracleId(), details);
             DeckCard existing = deck.getCards().stream()
                     .filter(value -> value.getOracleId().equals(details.oracleId())
@@ -53,6 +56,9 @@ public class DeckService {
                     new DeckCard(card.getOracleId(), card.getQuantity(), card.getBoardType()),
                     detailsById.get(card.getOracleId()));
         }
+        accessories.addAccessories(deck, deck.getCards().stream()
+                .filter(card -> DeckAccessoryService.generatesAccessories(card.getBoardType()))
+                .map(card -> detailsById.get(card.getOracleId())).distinct().toList());
         return DeckResponse.from(repository.saveAndFlush(deck));
     }
 
@@ -66,7 +72,7 @@ public class DeckService {
             throw new RuleViolationException("Invalid commander selection");
         }
         for (UUID id : ids) deck.addCard(new DeckCard(id, 1, BoardType.COMMANDER));
-        validateCommanders(deck);
+        accessories.addAccessories(deck, validateCommanders(deck));
         return DeckResponse.from(repository.saveAndFlush(deck));
     }
 
@@ -81,12 +87,14 @@ public class DeckService {
                 if (existing.getBoardType() == BoardType.COMMANDER) {
                     Deck remaining = without(deck, existing);
                     if (remaining.getCards().stream().noneMatch(card -> card.getBoardType() == BoardType.COMMANDER)
-                            && !remaining.getCards().isEmpty()) {
+                            && remaining.getCards().stream().anyMatch(card -> card.getBoardType() == BoardType.MAINBOARD
+                                    || card.getBoardType() == BoardType.COMPANION)) {
                         throw new RuleViolationException("Remove mainboard and companion cards before removing the last commander");
                     }
                     validateCommanders(remaining);
                 }
                 deck.removeCard(existing);
+                accessories.removeOrphans(deck, existing);
             }
         } else {
             var details = integration.fetchCardDetails(request.oracleId());
@@ -94,21 +102,27 @@ public class DeckService {
             // Validate a detached view excluding the replaced row, without mutating managed entities.
             Deck validationDeck = without(deck, existing);
             validator(deck).validateCardAddition(validationDeck, candidate, details);
-            if (existing == null) deck.addCard(candidate);
-            else existing.setQuantity(request.quantity());
+            if (existing == null) {
+                deck.addCard(candidate);
+                if (DeckAccessoryService.generatesAccessories(candidate.getBoardType()))
+                    accessories.addAccessories(deck, List.of(details));
+            } else existing.setQuantity(request.quantity());
         }
         deck.invalidateAnalysis();
         return DeckResponse.from(repository.saveAndFlush(deck));
     }
 
-    private void validateCommanders(Deck deck) {
+    private List<CardDetailsResponse> validateCommanders(Deck deck) {
+        var details = new java.util.ArrayList<CardDetailsResponse>();
         for (DeckCard card : deck.getCards()) {
             if (card.getBoardType() == BoardType.COMMANDER) {
+                var commander = integration.fetchCardDetails(card.getOracleId());
                 validator(deck).validateCardAddition(without(deck, card),
-                        new DeckCard(card.getOracleId(), 1, BoardType.COMMANDER),
-                        integration.fetchCardDetails(card.getOracleId()));
+                        new DeckCard(card.getOracleId(), 1, BoardType.COMMANDER), commander);
+                details.add(commander);
             }
         }
+        return details;
     }
 
     private Deck without(Deck deck, DeckCard excluded) {

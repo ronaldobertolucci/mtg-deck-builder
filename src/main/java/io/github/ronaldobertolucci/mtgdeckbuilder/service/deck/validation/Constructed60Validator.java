@@ -29,6 +29,11 @@ public class Constructed60Validator implements FormatValidatorStrategy {
         if (newCard.getBoardType() == BoardType.COMMANDER) {
             throw new RuleViolationException("Constructed decks cannot have a commander");
         }
+        if (newCard.getBoardType() == BoardType.TOKENS) {
+            if (!io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.ResolvedCardResponse.isAccessory(cardDetails.layout(), cardDetails.typeLine()))
+                throw new RuleViolationException("Only accessories can be added to TOKENS");
+            return;
+        }
         CompanionRules.validateAddition(deck, newCard, cardDetails);
         long copies = deck.getCards().stream()
                 .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.SIDEBOARD

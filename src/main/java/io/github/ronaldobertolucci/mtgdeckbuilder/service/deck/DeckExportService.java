@@ -29,6 +29,7 @@ public class DeckExportService {
         var formatter = factory.getFormatter(format);
         Map<BoardType, List<ExportableCard>> cardsByZone = new EnumMap<>(BoardType.class);
         for (DeckCard card : deck.getCards()) {
+            if (format == ExportFormat.ARENA && card.getBoardType() == BoardType.TOKENS) continue;
             var details = integration.fetchCardDetails(card.getOracleId());
             cardsByZone.computeIfAbsent(card.getBoardType(), zone -> new ArrayList<>())
                     .add(new ExportableCard(details.name(), card.getQuantity()));

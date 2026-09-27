@@ -268,7 +268,7 @@ class DeckControllerTest {
     void acceptsCompanionBoardForUpsertAndRemoval(int quantity) throws Exception {
         var result = new DeckResponse(deckId, "Test", Format.MODERN, null, null,
                 quantity == 0 ? List.of() : List.of(new DeckCardResponse(UUID.randomUUID(), oracleId,
-                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.COMPANION, 1)), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
+                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.COMPANION, 1, false)), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
         when(service.upsertCard(eq(42L), eq(deckId), any())).thenReturn(result);
         mvc.perform(put("/decks/{id}/cards", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
                 .content("""

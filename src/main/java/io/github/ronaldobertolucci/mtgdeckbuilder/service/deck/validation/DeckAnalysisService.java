@@ -53,6 +53,7 @@ public class DeckAnalysisService {
         }
         Map<UUID, Long> quantities = new LinkedHashMap<>();
         for (DeckCard card : deck.getCards()) {
+            if (card.getBoardType() == BoardType.TOKENS) continue;
             if (card.getQuantity() <= 0) violations.add("Card quantity must be positive: " + card.getOracleId());
             quantities.merge(card.getOracleId(), (long) card.getQuantity(), Long::sum);
         }
