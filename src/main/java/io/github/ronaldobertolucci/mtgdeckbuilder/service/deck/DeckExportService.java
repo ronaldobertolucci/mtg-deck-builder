@@ -24,6 +24,17 @@ public class DeckExportService {
     }
 
     @Transactional(readOnly = true)
+    public PrintDeckResponse printCards(UUID deckId, Long userId) {
+        Deck deck = repository.findByIdAndUserId(deckId, userId).orElseThrow(DeckNotFoundException::new);
+        Map<UUID, Integer> quantities = new TreeMap<>();
+        for (DeckCard card : deck.getCards()) {
+            quantities.merge(card.getOracleId(), card.getQuantity(), Integer::sum);
+        }
+        return new PrintDeckResponse(quantities.entrySet().stream()
+                .map(entry -> new PrintDeckCardResponse(entry.getKey(), entry.getValue())).toList());
+    }
+
+    @Transactional(readOnly = true)
     public ExportDeckResponse exportDeck(UUID deckId, ExportFormat format, Long userId) {
         Deck deck = repository.findByIdAndUserId(deckId, userId).orElseThrow(DeckNotFoundException::new);
         var formatter = factory.getFormatter(format);

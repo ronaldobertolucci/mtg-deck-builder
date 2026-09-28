@@ -1,6 +1,7 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.PrintDeckCardResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
@@ -69,6 +70,49 @@ class DeckExportServiceTest {
         when(integration.fetchCardDetails(id)).thenThrow(new CardManagerUnavailableException("Unavailable", null));
         assertThatThrownBy(() -> service.exportDeck(deckId, ExportFormat.ARENA, 42L))
                 .isInstanceOf(CardManagerUnavailableException.class);
+    }
+
+    @Test void printCardsIncludesEveryStoredGroupWithoutFetchingDetails() {
+        Deck deck = new Deck(42L, "Deck", Format.COMMANDER);
+        var expected = new ArrayList<PrintDeckCardResponse>();
+        for (BoardType board : BoardType.values()) {
+            UUID id = UUID.randomUUID();
+            deck.addCard(new DeckCard(id, 1, board));
+            expected.add(new PrintDeckCardResponse(id, 1));
+        }
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+
+        assertThat(service.printCards(deckId, 42L).cards()).containsExactlyInAnyOrderElementsOf(expected);
+        verify(repository).findByIdAndUserId(deckId, 42L);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(integration);
+    }
+
+    @Test void printCardsSumsRepeatedOracleAcrossGroups() {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        UUID repeated = UUID.randomUUID(), other = UUID.randomUUID();
+        deck.addCard(new DeckCard(repeated, 2, BoardType.MAINBOARD));
+        deck.addCard(new DeckCard(other, 4, BoardType.MAINBOARD));
+        deck.addCard(new DeckCard(repeated, 3, BoardType.SIDEBOARD));
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+
+        assertThat(service.printCards(deckId, 42L).cards()).containsExactlyInAnyOrder(
+                new PrintDeckCardResponse(repeated, 5), new PrintDeckCardResponse(other, 4));
+        verifyNoInteractions(integration);
+    }
+
+    @Test void printCardsOfEmptyDeckReturnsEmptyList() {
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(new Deck(42L, "Empty", Format.MODERN)));
+        assertThat(service.printCards(deckId, 42L).cards()).isEmpty();
+        verifyNoInteractions(integration);
+    }
+
+    @Test void printCardsOfMissingOrUnownedDeckThrows() {
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.printCards(deckId, 42L)).isInstanceOf(DeckNotFoundException.class);
+        verify(repository).findByIdAndUserId(deckId, 42L);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(integration);
     }
 
     private CardDetailsResponse details(UUID id, String name) {

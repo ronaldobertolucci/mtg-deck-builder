@@ -39,6 +39,11 @@ public class DeckController {
         return statsService.getDeckStats(deckId, user.getId());
     }
 
+    @GetMapping("/{deckId}/print-cards")
+    public PrintDeckResponse printCards(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
+        return exportService.printCards(deckId, user.getId());
+    }
+
     @GetMapping("/{deckId}/export")
     public ExportDeckResponse exportDeck(@AuthenticationPrincipal User user, @PathVariable UUID deckId,
                                         @RequestParam(defaultValue = "ARENA") ExportFormat format) {

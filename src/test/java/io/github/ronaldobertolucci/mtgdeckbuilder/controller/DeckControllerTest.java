@@ -127,6 +127,40 @@ class DeckControllerTest {
         verifyNoInteractions(statsService);
     }
 
+    @Test void printCardsUsesBearerAuthenticatedUser() throws Exception {
+        User user = new User();
+        user.setId(42L);
+        when(tokenService.getSubject("print-token")).thenReturn("owner@example.com");
+        when(users.findByUsername("owner@example.com")).thenReturn(user);
+        when(exportService.printCards(deckId, 42L))
+                .thenReturn(new PrintDeckResponse(List.of(new PrintDeckCardResponse(oracleId, 5))));
+        mvc.perform(get("/api/decks/{id}/print-cards", deckId).contextPath("/api")
+                        .header("Authorization", "Bearer print-token"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"cards":[{"oracleId":"%s","quantity":5}]}
+                        """.formatted(oracleId)));
+        verify(exportService).printCards(deckId, 42L);
+    }
+
+    @Test void printCardsOfEmptyDeckReturnsEmptyArray() throws Exception {
+        when(exportService.printCards(deckId, 42L)).thenReturn(new PrintDeckResponse(List.of()));
+        mvc.perform(get("/decks/{id}/print-cards", deckId).with(owner()))
+                .andExpect(status().isOk()).andExpect(content().json("{\"cards\":[]}"));
+    }
+
+    @Test void printCardsOfMissingOrUnownedDeckReturns404() throws Exception {
+        when(exportService.printCards(deckId, 42L))
+                .thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        mvc.perform(get("/decks/{id}/print-cards", deckId).with(owner()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void printCardsRequiresAuthentication() throws Exception {
+        mvc.perform(get("/decks/{id}/print-cards", deckId)).andExpect(status().isForbidden());
+        verifyNoInteractions(exportService);
+    }
+
     @Test void exportsArenaByDefaultWithAuthenticatedOwner() throws Exception {
         when(exportService.exportDeck(deckId, io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat.ARENA, 42L))
                 .thenReturn(new ExportDeckResponse("Deck\n20 Island"));
