@@ -21,7 +21,7 @@ ainda não são verificadas.
 - Springdoc OpenAPI e Swagger UI
 - JUnit 5, Mockito, MockMvc e Testcontainers
 - H2 para parte dos testes
-- Maven Wrapper, Docker Compose e Nginx
+- Maven Wrapper e Docker Compose
 
 ## Modelo de dados e identidade das cartas
 
@@ -93,20 +93,23 @@ CARD_MANAGER_ORACLE_DETAILS_PATH=/cards/{oracleId}
 ### Iniciar API e PostgreSQL
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d --remove-orphans
 ```
 
 | Recurso | Nome |
 | --- | --- |
 | API | `mtg-deck-builder-app` |
 | PostgreSQL | `mtg-deck-builder-db` |
-| Proxy Nginx | `mtg-deck-builder-nginx` |
 | Volume lógico | `postgres-data` |
 | Rede | Rede padrão criada pelo Compose para o projeto |
 
-A API fica disponível pelo Nginx em `http://localhost/api`. O Compose não publica
-diretamente as portas 8080 da aplicação ou 5432 do banco. O nome efetivo do volume
-recebe o prefixo do projeto Compose.
+A API fica disponível em `http://localhost:8080/api`. O Compose mapeia
+`127.0.0.1:8080` do host para a porta `8080` do contêiner da aplicação, permitindo
+acesso somente pela máquina local. A porta 5432 do banco não é publicada.
+O nome efetivo do volume recebe o prefixo do projeto Compose.
+
+A opção `--remove-orphans` remove contêineres de serviços que deixaram de fazer
+parte do Compose ao atualizar uma instalação existente.
 
 Flyway aplica as migrações pendentes durante a inicialização. Swagger UI e OpenAPI
 ficam desabilitados no profile `prod`. Não há endpoint dedicado de health check
@@ -192,7 +195,7 @@ consulta nova reflete os dados atualmente disponíveis nesse serviço.
 
 ## API
 
-Base local: `http://localhost:8080/api`. Pelo Compose/Nginx: `http://localhost/api`.
+Base local e pelo Compose: `http://localhost:8080/api`.
 Os caminhos abaixo incluem o contexto `/api` uma única vez.
 
 Os endpoints de decks exigem, com exceção do endpoint de análise:
