@@ -198,13 +198,13 @@ consulta nova reflete os dados atualmente disponíveis nesse serviço.
 Base local e pelo Compose: `http://localhost:8080/api`.
 Os caminhos abaixo incluem o contexto `/api` uma única vez.
 
-Os endpoints de decks exigem, com exceção do endpoint de análise:
+Todos os endpoints de decks, incluindo o de análise, exigem autenticação:
 
 ```http
 Authorization: Bearer <token>
-Content-Type: application/json
 ```
 
+Nas requisições com corpo JSON, envie também `Content-Type: application/json`.
 O proprietário é obtido do usuário autenticado. Não envie `user_id` no corpo.
 
 ### Autenticação e conta
@@ -333,6 +333,33 @@ em branco, sem quebra de linha final. As cartas são ordenadas por nome dentro d
 Exige autenticação e propriedade do deck; deck inexistente ou de outro usuário
 retorna 404. O serviço resolve nomes por oracle ID no Card Manager usando o cache
 existente. Um deck vazio retorna `content` vazio; a exportação não altera nem analisa o deck.
+
+### Consultar cartas para o Printing
+
+`GET /api/decks/{deckId}/print-cards` recebe o UUID do deck no caminho, sem corpo
+e sem parâmetros de consulta. Exige `Authorization: Bearer <token>` do proprietário
+e retorna `200 OK` com JSON (`PrintDeckResponse`):
+
+```json
+{
+  "cards": [
+    {"oracleId": "b2c6aa39-2d2a-459c-a555-fb48ba993373", "quantity": 5}
+  ]
+}
+```
+
+Cada item contém `oracleId` (UUID da identidade da carta, não de uma impressão)
+e `quantity` (inteiro positivo). A lista inclui todas as zonas persistidas:
+MAINBOARD, COMMANDER, SIDEBOARD, COMPANION e TOKENS, incluindo acessórios automáticos.
+Ocorrências do mesmo oracle ID em zonas diferentes são consolidadas, somando as
+quantidades; por exemplo, 2 no MAINBOARD e 3 no SIDEBOARD resultam em `quantity: 5`.
+As zonas e a origem automática não são expostas na resposta.
+
+Deck vazio retorna `{"cards":[]}`. A resposta contém a lista completa, sem paginação;
+a paginação das opções ocorre no Printing que consome o endpoint. A consulta não acessa o Card Manager,
+não resolve nomes, imagens ou IDs de impressão e não altera nem analisa o deck.
+Deck inexistente ou pertencente a outro usuário retorna `404 Not Found`.
+Sem autenticação, a configuração de segurança atual retorna `403 Forbidden`.
 
 ### Importar deck de texto
 
@@ -497,6 +524,9 @@ ainda não são validadas no MVP.
 ```http
 POST /api/decks/{deckId}/analysis
 ```
+
+Exige autenticação e propriedade do deck; deck inexistente ou pertencente a outro
+usuário retorna `404 Not Found`.
 
 Não exige corpo. Reconsulta os metadados das cartas e persiste o resultado, os motivos
 e a data. Retorna `200 OK` mesmo quando encontra um deck irregular.
