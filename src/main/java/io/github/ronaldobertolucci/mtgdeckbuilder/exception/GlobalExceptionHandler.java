@@ -81,6 +81,13 @@ public class GlobalExceptionHandler {
         return response;
     }
 
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<ProblemDetail> handleMethodValidation(
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex,
+            HttpServletRequest request) {
+        return problem(HttpStatus.valueOf(ex.getStatusCode().value()), "Invalid request parameters", request);
+    }
+
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ProblemDetail> handleMalformedRequest(Exception ex, HttpServletRequest request) {
         return problem(HttpStatus.BAD_REQUEST, "Malformed request or invalid field type", request);

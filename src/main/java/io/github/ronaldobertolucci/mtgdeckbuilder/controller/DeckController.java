@@ -7,6 +7,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.ManaSuggestionSer
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +29,30 @@ public class DeckController {
         this.exportService = exportService;
         this.statsService = statsService;
         this.manaSuggestionService = manaSuggestionService;
+    }
+
+    @GetMapping
+    public PagedModel<DeckSummaryResponse> list(@AuthenticationPrincipal User user,
+                                               @RequestParam(defaultValue = "0") @Min(0) int page,
+                                               @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return new PagedModel<>(service.list(user.getId(), page, size));
+    }
+
+    @GetMapping("/{deckId}")
+    public DeckResponse get(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
+        return service.get(user.getId(), deckId);
+    }
+
+    @PatchMapping("/{deckId}")
+    public DeckResponse rename(@AuthenticationPrincipal User user, @PathVariable UUID deckId,
+                               @Valid @RequestBody RenameDeckRequest request) {
+        return service.rename(user.getId(), deckId, request);
+    }
+
+    @DeleteMapping("/{deckId}")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
+        service.delete(user.getId(), deckId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{deckId}/mana-suggestion")

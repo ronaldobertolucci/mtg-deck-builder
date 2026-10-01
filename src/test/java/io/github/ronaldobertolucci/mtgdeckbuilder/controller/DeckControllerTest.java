@@ -50,6 +50,90 @@ class DeckControllerTest {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
     }
 
+    @Test void listsPaginatedSummariesForOwner() throws Exception {
+        var summary = new DeckSummaryResponse(deckId, "Modern", Format.MODERN, null, null,
+                io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null);
+        when(service.list(42L, 1, 2)).thenReturn(new org.springframework.data.domain.PageImpl<>(
+                List.of(summary), org.springframework.data.domain.PageRequest.of(1, 2), 3));
+        mvc.perform(get("/decks").with(owner()).param("page", "1").param("size", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(deckId.toString()))
+                .andExpect(jsonPath("$.content[0].cards").doesNotExist())
+                .andExpect(jsonPath("$.page.totalElements").value(3))
+                .andExpect(jsonPath("$.page.number").value(1));
+    }
+
+    @Test void listsEmptyPageWithDefaults() throws Exception {
+        when(service.list(42L, 0, 20)).thenReturn(org.springframework.data.domain.Page.empty());
+        mvc.perform(get("/decks").with(owner())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
+        verify(service).list(42L, 0, 20);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"-1", "abc", "2147483648"})
+    void rejectsInvalidPage(String page) throws Exception {
+        mvc.perform(get("/decks").with(owner()).param("page", page)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"0", "-1", "101", "abc"})
+    void rejectsInvalidPageSize(String size) throws Exception {
+        mvc.perform(get("/decks").with(owner()).param("size", size)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @Test void getsIndividualDeck() throws Exception {
+        when(service.get(42L, deckId)).thenReturn(response());
+        mvc.perform(get("/decks/{id}", deckId).with(owner())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(deckId.toString())).andExpect(jsonPath("$.cards").isArray());
+    }
+
+    @Test void renamesDeck() throws Exception {
+        when(service.rename(42L, deckId, new RenameDeckRequest("Modern"))).thenReturn(response());
+        mvc.perform(patch("/decks/{id}", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Modern\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Modern"));
+        verify(service).rename(42L, deckId, new RenameDeckRequest("Modern"));
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"{}", "{\"name\":null}", "{\"name\":\"\"}", "{\"name\":\"   \"}"})
+    void rejectsMissingOrBlankRename(String body) throws Exception {
+        mvc.perform(patch("/decks/{id}", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content(body)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @Test void rejectsLongName() throws Exception {
+        mvc.perform(patch("/decks/{id}", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"" + "a".repeat(256) + "\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @Test void deletesDeckWithoutResponseBody() throws Exception {
+        mvc.perform(delete("/decks/{id}", deckId).with(owner())).andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+        verify(service).delete(42L, deckId);
+    }
+
+    @Test void crudRequiresAuthentication() throws Exception {
+        mvc.perform(get("/decks")).andExpect(status().isForbidden());
+        mvc.perform(get("/decks/{id}", deckId)).andExpect(status().isForbidden());
+        mvc.perform(patch("/decks/{id}", deckId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"New\"}")).andExpect(status().isForbidden());
+        mvc.perform(delete("/decks/{id}", deckId)).andExpect(status().isForbidden());
+        verifyNoInteractions(service);
+    }
+
+    @Test void individualOperationsReturn404ForMissingOrUnownedDeck() throws Exception {
+        when(service.get(42L, deckId)).thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        when(service.rename(eq(42L), eq(deckId), any())).thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException());
+        doThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException()).when(service).delete(42L, deckId);
+        mvc.perform(get("/decks/{id}", deckId).with(owner())).andExpect(status().isNotFound());
+        mvc.perform(patch("/decks/{id}", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"New\"}")).andExpect(status().isNotFound());
+        mvc.perform(delete("/decks/{id}", deckId).with(owner())).andExpect(status().isNotFound());
+    }
+
     @Test void suggests36LandsByDefaultForAuthenticatedOwner() throws Exception {
         when(manaSuggestionService.suggestManaBase(deckId, 42L, 36))
                 .thenReturn(new ManaSuggestionResponse(java.util.Map.of("WHITE", 0, "BLUE", 18,

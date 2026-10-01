@@ -8,6 +8,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardIntegrationService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.FormatValidatorStrategy;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.HashMap;
@@ -29,6 +32,30 @@ public class DeckService {
         this.strategies = strategies;
         this.parser = parser;
         this.accessories = new DeckAccessoryService(integration);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<DeckSummaryResponse> list(Long userId, int page, int size) {
+        return repository.findByUserId(userId,
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt", "id")))
+                .map(DeckSummaryResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public DeckResponse get(Long userId, UUID deckId) {
+        return DeckResponse.from(repository.findByIdAndUserId(deckId, userId)
+                .orElseThrow(DeckNotFoundException::new));
+    }
+
+    public DeckResponse rename(Long userId, UUID deckId, RenameDeckRequest request) {
+        Deck deck = repository.findOwnedForUpdate(deckId, userId).orElseThrow(DeckNotFoundException::new);
+        deck.setName(request.name());
+        return DeckResponse.from(repository.saveAndFlush(deck));
+    }
+
+    public void delete(Long userId, UUID deckId) {
+        Deck deck = repository.findOwnedForUpdate(deckId, userId).orElseThrow(DeckNotFoundException::new);
+        repository.delete(deck);
     }
 
     @Transactional

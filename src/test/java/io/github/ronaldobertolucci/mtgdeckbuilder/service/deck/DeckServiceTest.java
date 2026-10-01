@@ -34,6 +34,62 @@ class DeckServiceTest {
             new CardDetailsResponse(oracleId, "Example", "Legendary Creature", "", List.of("U"), io.github.ronaldobertolucci.mtgdeckbuilder.config.CardTestFixtures.legalities(), java.util.List.of())); }
     UpsertDeckCardRequest request(int quantity) { return new UpsertDeckCardRequest(oracleId, BoardType.MAINBOARD, quantity); }
 
+    @Test void listsOwnerSummariesWithStablePagination() {
+        var pageable = org.springframework.data.domain.PageRequest.of(1, 2,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "updatedAt", "id"));
+        when(repository.findByUserId(42L, pageable)).thenReturn(
+                new org.springframework.data.domain.PageImpl<>(List.of(deck), pageable, 3));
+        var result = service.list(42L, 1, 2);
+        assertThat(result.getTotalElements()).isEqualTo(3);
+        assertThat(result.getContent()).extracting(DeckSummaryResponse::name).containsExactly("Test");
+        verifyNoInteractions(integration);
+    }
+
+    @Test void getsOwnedDeckIncludingCardsAndAnalysis() {
+        deck.addCard(new DeckCard(oracleId, 4, BoardType.MAINBOARD));
+        deck.recordAnalysis(DeckStatus.IRREGULAR, java.time.Instant.now(), List.of("Too few cards"));
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var result = service.get(42L, deckId);
+        assertThat(result.cards()).hasSize(1);
+        assertThat(result.analysisMessages()).containsExactly("Too few cards");
+        assertThat(result.status()).isEqualTo(DeckStatus.IRREGULAR);
+        verifyNoInteractions(integration);
+    }
+
+    @Test void renamePreservesFormatCardsAndAnalysis() {
+        owned(); saved();
+        deck.addCard(new DeckCard(oracleId, 4, BoardType.MAINBOARD));
+        var at = java.time.Instant.now();
+        deck.recordAnalysis(DeckStatus.IRREGULAR, at, List.of("Too few cards"));
+        var result = service.rename(42L, deckId, new RenameDeckRequest("New name"));
+        assertThat(result.name()).isEqualTo("New name");
+        assertThat(result.format()).isEqualTo(Format.MODERN);
+        assertThat(result.cards()).hasSize(1);
+        assertThat(result.status()).isEqualTo(DeckStatus.IRREGULAR);
+        assertThat(result.analyzedAt()).isEqualTo(at);
+        assertThat(result.analysisMessages()).containsExactly("Too few cards");
+        verifyNoInteractions(integration);
+    }
+
+    @Test void deletesOwnedDeckUnderLock() {
+        owned();
+        service.delete(42L, deckId);
+        var order = inOrder(repository);
+        order.verify(repository).findOwnedForUpdate(deckId, 42L);
+        order.verify(repository).delete(deck);
+        verifyNoInteractions(integration);
+    }
+
+    @Test void missingOrUnownedDeckCannotBeReadRenamedOrDeleted() {
+        assertThatThrownBy(() -> service.get(42L, deckId)).isInstanceOf(DeckNotFoundException.class);
+        assertThatThrownBy(() -> service.rename(42L, deckId, new RenameDeckRequest("New")))
+                .isInstanceOf(DeckNotFoundException.class);
+        assertThatThrownBy(() -> service.delete(42L, deckId)).isInstanceOf(DeckNotFoundException.class);
+        verify(repository, never()).saveAndFlush(any());
+        verify(repository, never()).delete(any(Deck.class));
+        verifyNoInteractions(integration);
+    }
+
     @Test void createsConstructedOwnedByAuthenticatedUser() {
         saved();
         var response = service.create(42L, new CreateDeckRequest("Test", Format.PIONEER, null));

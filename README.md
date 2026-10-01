@@ -245,6 +245,29 @@ Use o token nas próximas requisições.
 
 ## Criação e edição de decks
 
+### Listar, consultar, renomear e excluir
+
+Todas as operações exigem autenticação e acessam somente decks do usuário autenticado.
+Deck inexistente ou pertencente a outro usuário retorna 404 nas operações individuais.
+
+| Método | Caminho | Resposta |
+| --- | --- | --- |
+| GET | `/api/decks?page=0&size=20` | 200 com resumos paginados do usuário. |
+| GET | `/api/decks/{deckId}` | 200 com `DeckResponse`, incluindo cartas e análise. |
+| PATCH | `/api/decks/{deckId}` | 200 com o deck renomeado. Corpo: `{"name":"Novo nome"}`. |
+| DELETE | `/api/decks/{deckId}` | 204 sem corpo; remove também cartas e mensagens da análise. |
+
+A listagem retorna `content` e `page` (`size`, `number`, `totalElements`, `totalPages`).
+Cada resumo contém `id`, `name`, `format`, `createdAt`, `updatedAt`, `status` e `analyzedAt`,
+sem carregar cartas e mensagens. A ordenação é por `updatedAt` decrescente, com desempate
+por `id` decrescente. `page` começa em zero; `size` aceita 1 a 100 (padrão 20).
+Parâmetros inválidos retornam 400. Sem resultados, `content` é uma lista vazia.
+
+O nome é obrigatório, não pode ser branco e aceita até 255 caracteres. Renomear
+preserva formato, cartas e análise, e atualiza `updatedAt` quando o nome muda.
+A edição não oferece troca de formato. Uma segunda exclusão retorna 404.
+Essas operações não dependem do Card Manager.
+
 ### Estatísticas do deck
 
 `GET /api/decks/{deckId}/stats` retorna HTTP 200 com `totalCards`, `averageCmc`,
@@ -373,7 +396,7 @@ Exemplo com The Tenth Doctor e Rose Tyler:
 Retorna `201 Created`, cabeçalho `Location` e o deck criado. Os comandantes são
 incluídos na zona COMMANDER com quantidade 1, após validar seus metadados e regras.
 O status inicial é UNDEFINED. O endereço de `Location` identifica o recurso;
-ainda não existe endpoint GET de consulta individual de decks.
+pode ser consultado com `GET /api/decks/{deckId}`.
 
 ### Adicionar, atualizar ou remover uma carta
 
@@ -543,8 +566,7 @@ com `Content-Type: application/problem+json`:
 | 503 Service Unavailable | Card Manager indisponível durante criação ou edição. |
 
 Os fluxos de autenticação também possuem tratamentos próprios de erro; nem todas as
-respostas da aplicação usam o mesmo envelope. Não há, por enquanto, endpoints de
-listagem, exclusão de deck ou alteração de nome/formato.
+respostas da aplicação usam o mesmo envelope. O formato do deck não pode ser alterado.
 
 ## Desenvolvimento local
 
