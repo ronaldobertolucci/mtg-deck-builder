@@ -116,11 +116,11 @@ class DeckControllerTest {
     }
 
     @Test void crudRequiresAuthentication() throws Exception {
-        mvc.perform(get("/decks")).andExpect(status().isForbidden());
-        mvc.perform(get("/decks/{id}", deckId)).andExpect(status().isForbidden());
+        mvc.perform(get("/decks")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/decks/{id}", deckId)).andExpect(status().isUnauthorized());
         mvc.perform(patch("/decks/{id}", deckId).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"New\"}")).andExpect(status().isForbidden());
-        mvc.perform(delete("/decks/{id}", deckId)).andExpect(status().isForbidden());
+                .content("{\"name\":\"New\"}")).andExpect(status().isUnauthorized());
+        mvc.perform(delete("/decks/{id}", deckId)).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
 
@@ -158,7 +158,7 @@ class DeckControllerTest {
 
     @Test void manaSuggestionRequiresAuthentication() throws Exception {
         mvc.perform(get("/api/decks/{id}/mana-suggestion", deckId).contextPath("/api"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         verifyNoInteractions(manaSuggestionService);
     }
 
@@ -207,7 +207,7 @@ class DeckControllerTest {
 
     @Test void statsRequireAuthentication() throws Exception {
         mvc.perform(get("/api/decks/{id}/stats", deckId).contextPath("/api"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         verifyNoInteractions(statsService);
     }
 
@@ -241,7 +241,7 @@ class DeckControllerTest {
     }
 
     @Test void printCardsRequiresAuthentication() throws Exception {
-        mvc.perform(get("/decks/{id}/print-cards", deckId)).andExpect(status().isForbidden());
+        mvc.perform(get("/decks/{id}/print-cards", deckId)).andExpect(status().isUnauthorized());
         verifyNoInteractions(exportService);
     }
 
@@ -272,7 +272,7 @@ class DeckControllerTest {
     }
 
     @Test void exportRequiresAuthentication() throws Exception {
-        mvc.perform(get("/decks/{id}/export", deckId)).andExpect(status().isForbidden());
+        mvc.perform(get("/decks/{id}/export", deckId)).andExpect(status().isUnauthorized());
         verifyNoInteractions(exportService);
     }
 
@@ -399,7 +399,7 @@ class DeckControllerTest {
 
     @Test void unauthenticatedCannotCreateDeck() throws Exception {
         mvc.perform(post("/decks").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Deck\",\"format\":\"MODERN\"}")).andExpect(status().isForbidden());
+                .content("{\"name\":\"Deck\",\"format\":\"MODERN\"}")).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
 }

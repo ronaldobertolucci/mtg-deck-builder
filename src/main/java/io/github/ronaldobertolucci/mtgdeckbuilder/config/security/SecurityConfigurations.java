@@ -27,6 +27,11 @@ public class SecurityConfigurations {
         return http.csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) ->
+                                SecurityErrorResponse.unauthorized(request, response))
+                        .accessDeniedHandler((request, response, exception) ->
+                                SecurityErrorResponse.forbidden(request, response)))
                 .authorizeHttpRequests(req -> req.requestMatchers("/auth/**", "/password/**").permitAll()
                         .requestMatchers("/api/**").hasAnyAuthority("USER")
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()

@@ -116,6 +116,25 @@ class AuthenticationControllerTest {
     }
 
     @Test
+    void login_WithExpiredBearerToken_ShouldIssueNewToken() throws Exception {
+        when(tokenService.getSubject("expired-token")).thenThrow(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.exception.JwtAuthenticationException(
+                        "SESSION_EXPIRED", "JWT token expired", null));
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(testUser);
+        when(authenticationManager.authenticate(any())).thenReturn(authentication);
+        when(tokenService.generateToken(testUser)).thenReturn("new-token");
+
+        mockMvc.perform(post("/auth/login")
+                        .header("Authorization", "Bearer expired-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginDto("john@example.com", "password123"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("new-token"))
+                .andExpect(jsonPath("$.expiresIn").value(7200));
+    }
+
+    @Test
     void login_WhenCredentialsAreInvalid_ShouldReturnUnauthorized() throws Exception {
         // Arrange
         LoginDto loginDto = new LoginDto("john@example.com", "wrongpassword");

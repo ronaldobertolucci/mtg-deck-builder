@@ -59,7 +59,7 @@ class DeckAnalysisControllerTest {
         mvc.perform(post("/decks/{id}/analysis",deckId).with(owner())).andExpect(status().isNotFound());
     }
     @Test void requiresAuthentication() throws Exception {
-        mvc.perform(post("/decks/{id}/analysis",deckId)).andExpect(status().isForbidden());
+        mvc.perform(post("/decks/{id}/analysis",deckId)).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
 }

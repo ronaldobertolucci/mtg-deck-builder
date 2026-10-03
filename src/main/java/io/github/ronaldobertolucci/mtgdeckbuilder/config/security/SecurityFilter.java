@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -44,10 +45,11 @@ public class SecurityFilter extends OncePerRequestFilter {
                 );
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
-        } catch (Exception e) {
-            logger.error("Authentication error: {}", e.getMessage());
-            // Não autentica, apenas continua o filtro
-            // O Spring Security vai retornar 401/403 automaticamente
+        } catch (AuthenticationException e) {
+            SecurityContextHolder.clearContext();
+            request.setAttribute(SecurityErrorResponse.AUTHENTICATION_FAILURE, e);
+            // Public endpoints remain accessible, including login with a stale token.
+            logger.debug("Authentication failed: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);

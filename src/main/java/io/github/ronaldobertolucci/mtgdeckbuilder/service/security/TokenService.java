@@ -4,6 +4,8 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTCreationException;
 import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.exceptions.TokenExpiredException;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.JwtAuthenticationException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,9 +50,10 @@ public class TokenService {
                     .build()
                     .verify(tokenJWT)
                     .getSubject();
+        } catch (TokenExpiredException exception) {
+            throw new JwtAuthenticationException("SESSION_EXPIRED", "JWT token expired", exception);
         } catch (JWTVerificationException exception) {
-            logger.error("Invalid or expired JWT token", exception);
-            throw new RuntimeException("Invalid or expired JWT token", exception);
+            throw new JwtAuthenticationException("INVALID_TOKEN", "Invalid JWT token", exception);
         }
     }
 
@@ -63,9 +66,10 @@ public class TokenService {
                     .verify(tokenJWT)
                     .getClaim("id")
                     .asLong();
+        } catch (TokenExpiredException exception) {
+            throw new JwtAuthenticationException("SESSION_EXPIRED", "JWT token expired", exception);
         } catch (JWTVerificationException exception) {
-            logger.error("Invalid or expired JWT token", exception);
-            throw new RuntimeException("Invalid or expired JWT token", exception);
+            throw new JwtAuthenticationException("INVALID_TOKEN", "Invalid JWT token", exception);
         }
     }
 

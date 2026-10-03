@@ -23,6 +23,47 @@ ainda não são verificadas.
 - H2 para parte dos testes
 - Maven Wrapper e Docker Compose
 
+## Expiração da sessão e novo login
+
+O login (`POST /auth/login`, relativo ao context path da API) retorna `token`,
+`type`, `expiresIn` em segundos e `user`. O JWT expira em 2 horas por padrão
+(`api.security.token.expiration-hours`). Não há refresh token: após a expiração,
+o usuário deve informar suas credenciais novamente para obter um novo token.
+
+Requisições a recursos protegidos retornam JSON com `timestamp`, `status`, `error`,
+`code`, `message` e `path`:
+
+| HTTP | `code` | Comportamento esperado do cliente |
+| --- | --- | --- |
+| 401 | `SESSION_EXPIRED` | Limpar a autenticação e solicitar novo login. |
+| 401 | `INVALID_TOKEN` | Descartar o token e solicitar novo login. |
+| 401 | `AUTHENTICATION_REQUIRED` | Solicitar login para acessar o recurso. |
+| 403 | `ACCESS_DENIED` | Informar falta de permissão, sem encerrar a sessão. |
+
+Respostas 401 de recursos protegidos incluem `WWW-Authenticate: Bearer`; para token inválido ou expirado,
+o header inclui `error="invalid_token"`. Rotas públicas, incluindo login,
+continuam acessíveis mesmo com um Bearer expirado. Credenciais incorretas no login
+retornam 401 com a mensagem de erro de login, sem iniciar um ciclo de redirecionamento.
+
+### Integração do futuro frontend
+
+Este repositório contém apenas a API. O frontend deverá implementar o seguinte fluxo:
+
+1. Guardar o prazo de expiração a partir de `expiresIn`, mantendo o tratamento
+   centralizado de 401 como autoridade caso o token seja recusado pelo servidor.
+2. Antes de encaminhar ao login, preservar o rascunho do deck e a rota interna atual.
+   Vincular o rascunho ao ID do usuário, sem armazenar credenciais junto dele.
+3. Limpar o token e o estado de autenticação. Para `SESSION_EXPIRED`, exibir
+   “Sua sessão expirou. Entre novamente para continuar.”. Requisições simultâneas
+   devem provocar apenas um redirecionamento; não aplicar esse fluxo ao próprio login.
+4. Após login bem-sucedido, retornar à rota interna preservada e restaurar o rascunho
+   somente para o mesmo usuário. Não reenviar automaticamente operações de escrita;
+   permitir que o usuário revise e salve o deck.
+5. Tratar 403 como falta de permissão, sem limpar a autenticação.
+
+A API não redireciona o navegador nem armazena rascunhos locais. Decks já persistidos
+continuam disponíveis após o novo login.
+
 ## Modelo de dados e identidade das cartas
 
 Os dados de autenticação e os decks são persistidos no PostgreSQL. Os metadados das
@@ -359,7 +400,7 @@ Deck vazio retorna `{"cards":[]}`. A resposta contém a lista completa, sem pagi
 a paginação das opções ocorre no Printing que consome o endpoint. A consulta não acessa o Card Manager,
 não resolve nomes, imagens ou IDs de impressão e não altera nem analisa o deck.
 Deck inexistente ou pertencente a outro usuário retorna `404 Not Found`.
-Sem autenticação, a configuração de segurança atual retorna `403 Forbidden`.
+Sem autenticação, a API retorna `401 Unauthorized` com `code: AUTHENTICATION_REQUIRED`.
 
 ### Importar deck de texto
 
