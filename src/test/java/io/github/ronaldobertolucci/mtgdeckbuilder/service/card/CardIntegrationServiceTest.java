@@ -211,9 +211,9 @@ class CardIntegrationServiceTest {
         server.expect(once(), requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
-                        [{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"},
-                         {"oracle_id":"%s","name":"Other","type_line":"Instant"}]
-                        """.formatted(ORACLE_ID, UUID.randomUUID()), MediaType.APPLICATION_JSON));
+                        {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}],
+                         "limit":1,"offset":0,"hasNext":false}
+                        """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
         var first = service.fetchCardDetailsByName("Lightning Bolt");
         assertThat(first.oracleId()).isEqualTo(ORACLE_ID);
         assertThat(first.name()).isEqualTo("Lightning Bolt");
@@ -227,10 +227,11 @@ class CardIntegrationServiceTest {
     void differentlyCasedNameDoesNotReuseCachedExactMatch() {
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
                 .andRespond(withSuccess("""
-                        [{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}]
+                        {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}],
+                         "limit":1,"offset":0,"hasNext":false}
                         """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=lightning%20bolt&limit=1"))
-                .andRespond(withResourceNotFound());
+                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
 
         var card = service.fetchCardDetailsByName("Lightning Bolt");
         assertThatThrownBy(() -> service.fetchCardDetailsByName("lightning bolt"))
@@ -243,21 +244,10 @@ class CardIntegrationServiceTest {
     @Test
     void emptyNameSearchThrowsRuleViolationAndIsNotCached() {
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
-                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
                 .hasMessageContaining("Missing");
-        assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
-        server.verify();
-    }
-
-    @Test
-    void exactNameNotFoundThrowsRuleViolationAndIsNotCached() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
-                .andRespond(withResourceNotFound());
-        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
-                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
-                .hasMessage("Card not found by name: Missing");
         assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
         server.verify();
     }
@@ -357,8 +347,73 @@ class CardIntegrationServiceTest {
     @Test
     void manualTokenNameSearchIncludesTokens() {
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Token&limit=1&include_tokens=true"))
-                .andRespond(withSuccess("[{\"oracle_id\":\"" + ORACLE_ID + "\",\"layout\":\"token\"}]", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"items\":[{\"oracle_id\":\"" + ORACLE_ID + "\",\"layout\":\"token\"}],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         assertThat(service.fetchAccessoryByName("Token").layout()).isEqualTo("token");
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", "null", "{}", "{\"items\":null}",
+            "{\"items\":[null]}", "[]", "{", "{\"items\":{}}"})
+    void invalidNameSearchIsUnavailableForCardsAndAccessories(String response) {
+        for (boolean accessory : new boolean[]{false, true}) {
+            server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Invalid&limit=1"
+                            + (accessory ? "&include_tokens=true" : "")))
+                    .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        }
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Invalid"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThatThrownBy(() -> service.fetchAccessoryByName("Invalid"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("Invalid")).isNull();
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {400, 404, 500, 503})
+    void nameSearchHttpFailuresAreUnavailable(int status) {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+                .andRespond(withStatus(HttpStatus.valueOf(status)));
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
+                .isInstanceOf(CardManagerUnavailableException.class)
+                .hasCauseInstanceOf(org.springframework.web.client.RestClientException.class);
+        server.verify();
+    }
+
+    @Test
+    void nameSearchConnectionFailureIsUnavailable() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+                .andRespond(withException(new IOException("Connection refused")));
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        server.verify();
+    }
+
+    @Test
+    void accessorySearchWithNoItemsIsNotFound() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1&include_tokens=true"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.fetchAccessoryByName("Missing"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class);
+        server.verify();
+    }
+
+    @Test
+    void nameSearchPreservesRestoredCardFields() {
+        UUID printing = UUID.randomUUID();
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Example&limit=1"))
+                .andRespond(withSuccess("""
+                        {"items":[{"oracle_id":"%s","name":"Example","keywords":["Companion"],
+                         "all_parts":[{"id":"%s","component":"token","name":"Token"}],
+                         "produced_mana":["G"],"rarity":"rare"}],"limit":1,"offset":0,"hasNext":false}
+                        """.formatted(ORACLE_ID, printing), MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetailsByName("Example");
+        assertThat(card.keywords()).containsExactly("Companion");
+        assertThat(card.allParts()).extracting(io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.RelatedCard::id)
+                .containsExactly(printing);
+        assertThat(card.producedMana()).containsExactly("G");
+        assertThat(card.rarity()).isEqualTo("rare");
+        assertThat(service.fetchCardDetailsByName("Example")).isSameAs(card);
         server.verify();
     }
 

@@ -2,6 +2,7 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.service.card;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.config.CardManagerProperties;
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardSearchResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.ResolvedCardResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardManagerUnavailableException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardNotFoundException;
@@ -60,19 +61,20 @@ public class CardIntegrationService {
             throw new CardManagerUnavailableException("Card Manager URL is not configured", null);
         }
         try {
-            List<CardDetailsResponse> cards = restClient.get()
+            CardSearchResponse response = restClient.get()
                     .uri("/cards/search?lang=en&name_exact={name}&limit=1" + (includeTokens ? "&include_tokens=true" : ""), name)
                     .retrieve()
-                    .body(new ParameterizedTypeReference<List<CardDetailsResponse>>() {});
-            if (cards == null) {
-                throw new CardManagerUnavailableException("Card Manager returned an empty response", null);
+                    .body(CardSearchResponse.class);
+            if (response == null || response.items() == null) {
+                throw new CardManagerUnavailableException("Card Manager returned an invalid search response", null);
             }
-            if (cards.isEmpty()) {
+            if (response.items().isEmpty()) {
                 throw new RuleViolationException("Card not found by name: " + name);
             }
-            return cards.getFirst();
-        } catch (HttpClientErrorException.NotFound ex) {
-            throw new RuleViolationException("Card not found by name: " + name);
+            if (response.items().getFirst() == null) {
+                throw new CardManagerUnavailableException("Card Manager returned an invalid search response", null);
+            }
+            return response.items().getFirst();
         } catch (RestClientException ex) {
             throw new CardManagerUnavailableException("Card Manager is unavailable", ex);
         }

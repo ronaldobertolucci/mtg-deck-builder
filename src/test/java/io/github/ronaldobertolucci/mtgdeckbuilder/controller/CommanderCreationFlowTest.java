@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(value = DeckController.class, properties = "services.card-manager.url=http://card-manager.test")
-@Import({SecurityConfigurations.class, DeckService.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckImportParserService.class, CommanderValidator.class,
+@Import({SecurityConfigurations.class, DeckService.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckImportParserService.class, CommanderValidator.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.Constructed60Validator.class,
         CardRuleOverrideService.class, CardIntegrationService.class, CardManagerConfiguration.class})
 @ImportAutoConfiguration({RestClientAutoConfiguration.class, CacheAutoConfiguration.class})
 @AutoConfigureMockRestServiceServer
@@ -50,13 +50,13 @@ class CommanderCreationFlowTest {
     @MockitoBean UserRepository users;
     @MockitoBean TokenService tokens;
 
-    @BeforeEach void clearCache() { cacheManager.getCache("cards").clear(); }
+    @BeforeEach void clearCache() { cacheManager.getCache("cards").clear(); cacheManager.getCache("cards_by_name").clear(); }
 
     @org.junit.jupiter.api.Test
     void importReturns422WhenCardManagerCannotFindExactCommanderName() throws Exception {
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Missing&limit=1"))
-                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound());
+                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         User user = new User();
         user.setId(42L);
         mvc.perform(post("/decks/import")
@@ -70,6 +70,64 @@ class CommanderCreationFlowTest {
                 .andExpect(jsonPath("$.status").value(422))
                 .andExpect(jsonPath("$.detail").value("Card not found by name: Missing"));
         verify(decks, times(1)).saveAndFlush(any());
+        server.verify();
+    }
+
+    @org.junit.jupiter.api.Test
+    void importsCardsAndManualAndAutomaticAccessoriesUsingHttpContracts() throws Exception {
+        UUID bolt = UUID.randomUUID(), manual = UUID.randomUUID(), automatic = UUID.randomUUID(), printing = UUID.randomUUID();
+        when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+                .andRespond(withSuccess("""
+                        {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant",
+                         "legalities":{"modern":"legal"},"all_parts":[{"id":"%s"}]}],
+                         "limit":1,"offset":0,"hasNext":false}
+                        """.formatted(bolt, printing), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Soldier&limit=1&include_tokens=true"))
+                .andRespond(withSuccess("""
+                        {"items":[{"oracle_id":"%s","name":"Soldier","type_line":"Token Creature","layout":"token"}],
+                         "limit":1,"offset":0,"hasNext":false}
+                        """.formatted(manual), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/resolve"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.POST))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.content().json(
+                        "{\"ids\":[\"" + printing + "\"]}"))
+                .andRespond(withSuccess("""
+                        [{"id":"%s","oracleId":"%s","name":"Goblin","layout":"token","typeLine":"Token Creature"}]
+                        """.formatted(printing, automatic), MediaType.APPLICATION_JSON));
+        User user = new User(); user.setId(42L);
+        mvc.perform(post("/decks/import")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Imported","format":"MODERN","rawText":"2 Lightning Bolt\\nTokens\\n1 Soldier"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cards.length()").value(3))
+                .andExpect(jsonPath("$.cards[0].oracleId").value(bolt.toString()))
+                .andExpect(jsonPath("$.cards[0].quantity").value(2))
+                .andExpect(jsonPath("$.cards[1].oracleId").value(manual.toString()))
+                .andExpect(jsonPath("$.cards[1].boardType").value("TOKENS"))
+                .andExpect(jsonPath("$.cards[1].isAutoGenerated").value(false))
+                .andExpect(jsonPath("$.cards[2].oracleId").value(automatic.toString()))
+                .andExpect(jsonPath("$.cards[2].isAutoGenerated").value(true));
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "{}", "{\"items\":null}", "{"})
+    void importReturns503ForInvalidSearchResponse(String response) throws Exception {
+        when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Invalid&limit=1"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        User user = new User(); user.setId(42L);
+        mvc.perform(post("/decks/import")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Invalid","format":"MODERN","rawText":"1 Invalid"}
+                                """))
+                .andExpect(status().isServiceUnavailable());
         server.verify();
     }
 
