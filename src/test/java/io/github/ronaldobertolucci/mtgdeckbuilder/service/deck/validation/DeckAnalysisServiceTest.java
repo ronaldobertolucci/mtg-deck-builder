@@ -75,6 +75,52 @@ class DeckAnalysisServiceTest {
         verify(integration, never()).refreshCardDetails(token);
     }
     @Test void regularCommander() { commander(99,false); expect(DeckStatus.REGULAR); }
+    @Test void unknownCardIdentityIsUndefined() {
+        commander(98, false);
+        UUID id = add(1, BoardType.MAINBOARD, "Creature", "", CardLegality.LEGAL, null, List.of());
+        expect(DeckStatus.UNDEFINED);
+        assertThat(deck.getAnalysisMessages()).containsExactly("Unknown color identity: " + id);
+    }
+    @Test void unknownCommanderIdentityDoesNotCreateFalseColorViolation() {
+        deck.setFormat(Format.COMMANDER);
+        UUID id = add(1, BoardType.COMMANDER, "Legendary Creature", "", CardLegality.LEGAL, null, List.of());
+        add(99, BoardType.MAINBOARD, "Basic Land", "", CardLegality.LEGAL, List.of("U"), List.of());
+        expect(DeckStatus.UNDEFINED);
+        assertThat(deck.getAnalysisMessages()).containsExactly("Unknown color identity: " + id);
+    }
+    @Test void unknownPartnerIdentityDoesNotCreateFalseColorViolation() {
+        commander(97, false);
+        UUID id = add(1, BoardType.COMMANDER, "Legendary Creature", "Partner", CardLegality.LEGAL, null, List.of());
+        add(1, BoardType.MAINBOARD, "Creature", "", CardLegality.LEGAL, List.of("R"), List.of());
+        expect(DeckStatus.UNDEFINED);
+        assertThat(deck.getAnalysisMessages()).containsExactly("Unknown color identity: " + id);
+    }
+    @Test void knownColorViolationTakesPrecedenceOverUnknownIdentity() {
+        commander(97, false);
+        UUID unknown = add(1, BoardType.MAINBOARD, "Creature", "", CardLegality.LEGAL, null, List.of());
+        UUID outside = add(1, BoardType.MAINBOARD, "Creature", "", CardLegality.LEGAL, List.of("R"), List.of());
+        expect(DeckStatus.IRREGULAR);
+        assertThat(deck.getAnalysisMessages()).containsExactly(
+                "Card color identity is outside the commanders' identity: " + outside,
+                "Unknown color identity: " + unknown);
+    }
+    @Test void bannedCommanderWithUnknownIdentityRemainsIrregular() {
+        deck.setFormat(Format.COMMANDER);
+        add(1, BoardType.COMMANDER, "Legendary Creature", "", CardLegality.BANNED, null, List.of());
+        basic(99, BoardType.MAINBOARD);
+        expect(DeckStatus.IRREGULAR);
+        assertThat(deck.getAnalysisMessages()).anyMatch(message -> message.startsWith("Unknown color identity:"));
+    }
+    @Test void unknownIdentityDoesNotAffectConstructedAnalysis() {
+        add(60, BoardType.MAINBOARD, "Basic Land", "", CardLegality.LEGAL, null, List.of());
+        expect(DeckStatus.REGULAR);
+    }
+    @Test void confirmedColorlessCommanderAndCardsAreRegular() {
+        deck.setFormat(Format.COMMANDER);
+        add(1, BoardType.COMMANDER, "Legendary Creature", "", CardLegality.LEGAL, List.of(), List.of());
+        basic(99, BoardType.MAINBOARD);
+        expect(DeckStatus.REGULAR);
+    }
     @Test void regularPair() { commander(98,true); expect(DeckStatus.REGULAR); }
     @Test void commanderIncomplete() { commander(98,false); expect(DeckStatus.IRREGULAR); }
     @Test void commanderTooLarge() { commander(100,false); expect(DeckStatus.IRREGULAR); }

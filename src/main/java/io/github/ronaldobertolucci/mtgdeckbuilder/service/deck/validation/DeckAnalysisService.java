@@ -72,6 +72,9 @@ public class DeckAnalysisService {
                 continue;
             }
             details.put(id, card);
+            if (commander && card.colorIdentity() == null) {
+                uncertainties.add("Unknown color identity: " + id);
+            }
             var legality = card.legalities().get(deck.getFormat().name().toLowerCase(Locale.ROOT));
             if (legality == null || legality == CardLegality.UNKNOWN) {
                 uncertainties.add("Unknown format legality: " + id);
@@ -89,11 +92,15 @@ public class DeckAnalysisService {
             var team = leaderRows.stream().map(c -> details.get(c.getOracleId())).toList();
             try { CommanderPairRules.validate(team); }
             catch (RuleViolationException ex) { violations.add(ex.getMessage()); }
-            Set<String> colors = new HashSet<>();
-            team.forEach(c -> colors.addAll(c.colorIdentity()));
-            details.forEach((id, card) -> {
-                if (!colors.containsAll(card.colorIdentity())) violations.add("Card color identity is outside the commanders' identity: " + id);
-            });
+            // An incomplete commander identity cannot establish an out-of-identity violation.
+            if (team.stream().allMatch(c -> c.colorIdentity() != null)) {
+                Set<String> colors = new HashSet<>();
+                team.forEach(c -> colors.addAll(c.colorIdentity()));
+                details.forEach((id, card) -> {
+                    if (card.colorIdentity() != null && !colors.containsAll(card.colorIdentity()))
+                        violations.add("Card color identity is outside the commanders' identity: " + id);
+                });
+            }
         }
         var status = !violations.isEmpty() ? DeckStatus.IRREGULAR
                 : !uncertainties.isEmpty() ? DeckStatus.UNDEFINED : DeckStatus.REGULAR;

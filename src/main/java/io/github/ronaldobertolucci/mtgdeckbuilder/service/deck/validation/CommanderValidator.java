@@ -73,7 +73,10 @@ public class CommanderValidator implements FormatValidatorStrategy {
         for (var commander : team) CardLegalityRules.enforce(commander, Format.COMMANDER, 1);
         CommanderPairRules.validate(team);
         Set<String> colors = new HashSet<>();
-        team.forEach(commander -> colors.addAll(commander.colorIdentity()));
+        for (var commander : team) {
+            requireKnownColorIdentity(commander);
+            colors.addAll(commander.colorIdentity());
+        }
         if (newCard.getBoardType() == BoardType.COMMANDER) {
             for (DeckCard card : deck.getCards()) {
                 if (card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMPANION) {
@@ -101,8 +104,15 @@ public class CommanderValidator implements FormatValidatorStrategy {
     }
 
     private void validateColors(CardDetailsResponse card, Set<String> commanderColors) {
+        requireKnownColorIdentity(card);
         if (!commanderColors.containsAll(card.colorIdentity())) {
             throw new RuleViolationException("Card color identity is outside the commander's color identity: " + card.name());
+        }
+    }
+
+    private void requireKnownColorIdentity(CardDetailsResponse card) {
+        if (card.colorIdentity() == null) {
+            throw new RuleViolationException("Unknown color identity; compatibility cannot be confirmed: " + card.name());
         }
     }
 }

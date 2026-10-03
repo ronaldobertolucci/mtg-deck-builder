@@ -57,6 +57,7 @@ public record CardDetailsResponse(
         legalities = legalities == null ? Map.of() : legalities.entrySet().stream().collect(
                 Collectors.toUnmodifiableMap(entry -> entry.getKey().toLowerCase(Locale.ROOT),
                         entry -> Objects.requireNonNullElse(entry.getValue(), CardLegality.UNKNOWN)));
-        colorIdentity = colorIdentity != null ? List.copyOf(colorIdentity) : List.of();
+        // null means unknown; an empty list is a confirmed colorless identity.
+        colorIdentity = colorIdentity != null ? List.copyOf(colorIdentity) : null;
     }
 }

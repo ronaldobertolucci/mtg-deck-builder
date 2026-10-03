@@ -67,6 +67,18 @@ class CardIntegrationServiceTest {
         cacheManager.getCache("cards_by_name").clear();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", ",\"color_identity\":null", ",\"color_identity\":[]"})
+    void preservesUnknownAndColorlessIdentityThroughHttpAndCache(String field) {
+        server.expect(once(), requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("{\"oracle_id\":\"" + ORACLE_ID + "\"" + field + "}", MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetails(ORACLE_ID);
+        if (field.endsWith("[]")) assertThat(card.colorIdentity()).isEmpty();
+        else assertThat(card.colorIdentity()).isNull();
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isSameAs(card);
+        server.verify();
+    }
+
     @Test
     void deserializesProducedManaAndKeepsItInCache() {
         server.expect(once(), requestTo(CARD_URL + ORACLE_ID + "?lang=en"))

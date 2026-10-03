@@ -206,6 +206,33 @@ class CommanderValidatorTest {
         deck.addCard(new DeckCard(commanderId, 1, BoardType.COMMANDER));
     }
 
+    @Test
+    void rejectsUnknownCardIdentity() {
+        addCommander();
+        mockCommanderColors(List.of("U"));
+        assertViolation(addition(1), details("Creature", "", null), "Unknown color identity");
+    }
+
+    @Test
+    void rejectsUnknownExistingCommanderIdentity() {
+        addCommander();
+        mockCommanderColors(null);
+        assertViolation(addition(1), details("Creature", "", List.of("U")), "Unknown color identity");
+    }
+
+    @Test
+    void rejectsUnknownNewCommanderIdentity() {
+        assertViolation(new DeckCard(commanderId, 1, BoardType.COMMANDER), commanderDetails(null), "Unknown color identity");
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = BoardType.class, names = {"MAINBOARD", "COMPANION"})
+    void addingCommanderRejectsUnknownExistingCardIdentity(BoardType board) {
+        deck.addCard(new DeckCard(oracleId, 1, board));
+        when(integration.fetchCardDetails(oracleId)).thenReturn(details("Creature", "", null));
+        assertViolation(new DeckCard(commanderId, 1, BoardType.COMMANDER), commanderDetails(List.of("U")), "Unknown color identity");
+    }
+
     private void mockCommanderColors(List<String> colors) {
         when(integration.fetchCardDetails(commanderId)).thenReturn(commanderDetails(colors));
     }
