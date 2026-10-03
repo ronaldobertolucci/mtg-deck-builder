@@ -23,46 +23,90 @@ ainda não são verificadas.
 - H2 para parte dos testes
 - Maven Wrapper e Docker Compose
 
-## Expiração da sessão e novo login
+## Autenticação, refresh e expiração
 
-O login (`POST /auth/login`, relativo ao context path da API) retorna `token`,
-`type`, `expiresIn` em segundos e `user`. O JWT expira em 2 horas por padrão
-(`api.security.token.expiration-hours`). Não há refresh token: após a expiração,
-o usuário deve informar suas credenciais novamente para obter um novo token.
+O login (`POST /api/auth/login`) retorna `token`, `type` (Bearer), `expiresIn` em
+segundos e `user`. O JWT continua válido por 2 horas por padrão
+(`api.security.token.expiration-hours`). Login e refresh também enviam o cookie
+`mtg_refresh`, usado exclusivamente para renovar o acesso e encerrar a sessão.
+O refresh token não é exposto no JSON nem deve ser armazenado no localStorage.
 
-Requisições a recursos protegidos retornam JSON com `timestamp`, `status`, `error`,
-`code`, `message` e `path`:
-
-| HTTP | `code` | Comportamento esperado do cliente |
+| Endpoint | Entrada | Resultado |
 | --- | --- | --- |
-| 401 | `SESSION_EXPIRED` | Limpar a autenticação e solicitar novo login. |
-| 401 | `INVALID_TOKEN` | Descartar o token e solicitar novo login. |
-| 401 | `AUTHENTICATION_REQUIRED` | Solicitar login para acessar o recurso. |
-| 403 | `ACCESS_DENIED` | Informar falta de permissão, sem encerrar a sessão. |
+| `POST /api/auth/login` | JSON com `email` e `password` | JWT e novo cookie de refresh. |
+| `POST /api/auth/refresh` | Cookie `mtg_refresh`; sem body e sem necessidade de Bearer | Novo JWT e troca do cookie. |
+| `POST /api/auth/logout` | Cookie `mtg_refresh` | Revoga a sessão, apaga o cookie e retorna 204. Sem cookie, também retorna 204. |
 
-Respostas 401 de recursos protegidos incluem `WWW-Authenticate: Bearer`; para token inválido ou expirado,
-o header inclui `error="invalid_token"`. Rotas públicas, incluindo login,
-continuam acessíveis mesmo com um Bearer expirado. Credenciais incorretas no login
-retornam 401 com a mensagem de erro de login, sem iniciar um ciclo de redirecionamento.
+Os três endpoints exigem `X-CSRF-Protection: 1`. Esse header força preflight em
+requisições entre origens; CORS aceita credenciais somente das origens explícitas
+configuradas em `cors.allowed-origins`. Não usar curingas ou origens não confiáveis.
+O navegador deve usar `credentials: "include"`. Requisições sem o header retornam
+403 e não executam a operação. Clientes de API também devem enviar o header.
 
-### Integração do futuro frontend
+```javascript
+const response = await fetch(`${apiUrl}/auth/refresh`, {
+  method: "POST",
+  credentials: "include",
+  headers: { "X-CSRF-Protection": "1" }
+});
+```
 
-Este repositório contém apenas a API. O frontend deverá implementar o seguinte fluxo:
+O cookie é `HttpOnly`, `SameSite=Strict`, sem Domain, com path `/api/auth` (acompanha
+`server.servlet.context-path`) e `Secure` por padrão. O profile `dev` desabilita
+`Secure` para HTTP local. A configuração atual pressupõe frontend e API no mesmo
+site (por exemplo, subdomínios HTTPS do mesmo domínio), ainda que em origens diferentes.
+Hospedar o frontend em outro site exige revisar SameSite e a política de CSRF.
 
-1. Guardar o prazo de expiração a partir de `expiresIn`, mantendo o tratamento
-   centralizado de 401 como autoridade caso o token seja recusado pelo servidor.
-2. Antes de encaminhar ao login, preservar o rascunho do deck e a rota interna atual.
-   Vincular o rascunho ao ID do usuário, sem armazenar credenciais junto dele.
-3. Limpar o token e o estado de autenticação. Para `SESSION_EXPIRED`, exibir
-   “Sua sessão expirou. Entre novamente para continuar.”. Requisições simultâneas
-   devem provocar apenas um redirecionamento; não aplicar esse fluxo ao próprio login.
-4. Após login bem-sucedido, retornar à rota interna preservada e restaurar o rascunho
-   somente para o mesmo usuário. Não reenviar automaticamente operações de escrita;
-   permitir que o usuário revise e salve o deck.
-5. Tratar 403 como falta de permissão, sem limpar a autenticação.
+### Ciclo da sessão
 
-A API não redireciona o navegador nem armazena rascunhos locais. Decks já persistidos
-continuam disponíveis após o novo login.
+- Cada login cria uma sessão independente, com validade absoluta de 7 dias
+  (`api.security.refresh.expiration-days`). Renovar não estende esse prazo.
+- Tokens opacos usam 32 bytes aleatórios; o banco armazena apenas hashes SHA-256.
+- Cada refresh troca o token sob bloqueio da sessão no banco. Reutilizar qualquer
+  token anterior revoga toda aquela sessão, inclusive seu token mais recente.
+- Logout revoga a sessão correspondente ao cookie. Redefinir a senha revoga todas
+  as sessões de refresh do usuário. Contas desabilitadas não podem renovar.
+- Tokens antigos são retidos até a expiração absoluta para detectar reutilização.
+  A limpeza diária remove sessões expiradas e seu histórico
+  (`api.security.refresh.cleanup-cron`, padrão `0 30 2 * * ?`).
+- Login, refresh e logout retornam `Cache-Control: no-store`.
+
+**Limite da revogação:** JWTs já emitidos continuam válidos até sua expiração;
+logout e redefinição de senha impedem futuras renovações. O cliente deve apagar
+seu JWT no logout. Revogação imediata de JWT exigiria validação de sessão ou versão
+em cada requisição; não faz parte deste fluxo.
+
+### Integração com frontend
+
+Este repositório contém apenas a API. O frontend deverá guardar o JWT em memória e
+usar `expiresIn` para acompanhar sua validade. Ao receber 401 de um recurso protegido,
+tentar uma única renovação. Centralizar e coordenar essa operação, inclusive entre
+abas: duas renovações com o mesmo token serão interpretadas como reutilização.
+Não aplicar a renovação automática às próprias rotas de login, refresh e logout.
+
+Se a renovação funcionar, atualizar o JWT. Repetir apenas requisições que possam ser
+reexecutadas com segurança; não reenviar operações de escrita indiscriminadamente.
+Se o refresh retornar 401, limpar a autenticação, preservar a rota interna e o rascunho
+do deck vinculado ao ID do usuário e solicitar novo login. Restaurar o rascunho somente
+para o mesmo usuário. Falha de rede ou 5xx não equivale a expiração: manter o rascunho
+e informar a indisponibilidade, sem entrar em ciclo de tentativas.
+
+Requisições protegidas distinguem os seguintes códigos:
+
+| HTTP | `code` | Significado |
+| --- | --- | --- |
+| 401 | `SESSION_EXPIRED` | JWT expirado; em `/auth/refresh`, sessão ausente, inválida, expirada ou revogada. |
+| 401 | `INVALID_TOKEN` | JWT inválido. |
+| 401 | `AUTHENTICATION_REQUIRED` | Recurso exige autenticação. |
+| 403 | `ACCESS_DENIED` | Falta de permissão ou header CSRF ausente; não encerrar automaticamente a sessão. |
+
+Falha de refresh também apaga o cookie. Credenciais incorretas no login retornam
+401 com a mensagem de erro de login. Rotas públicas continuam disponíveis com um
+Bearer expirado. Decks já persistidos continuam disponíveis após um novo login.
+
+A rotação segue a orientação de detecção de reutilização do
+[RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2), e a proteção
+por header e CORS segue a [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#employing-custom-request-headers-for-ajaxapi).
 
 ## Modelo de dados e identidade das cartas
 
@@ -255,7 +299,9 @@ O proprietário é obtido do usuário autenticado. Não envie `user_id` no corpo
 | POST | `/api/auth/register` | Cadastrar usuário e iniciar confirmação de e-mail. |
 | GET | `/api/auth/verify-email?token=...` | Confirmar e-mail. |
 | POST | `/api/auth/resend-verification` | Reenviar confirmação, com `email` no corpo. |
-| POST | `/api/auth/login` | Autenticar com `email` e `password`. |
+| POST | `/api/auth/login` | Autenticar com `email` e `password`; emitir JWT e cookie de refresh. |
+| POST | `/api/auth/refresh` | Renovar JWT e rotacionar o cookie de refresh. |
+| POST | `/api/auth/logout` | Revogar a sessão de refresh e apagar o cookie. |
 | POST | `/api/password/forgot` | Solicitar recuperação, com `email` no corpo. |
 | GET | `/api/password/reset/validate?token=...` | Validar token de recuperação. |
 | POST | `/api/password/reset` | Redefinir senha, com `token` e `newPassword`. |

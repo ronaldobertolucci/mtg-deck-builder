@@ -44,6 +44,9 @@ class PasswordResetServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RefreshTokenService refreshTokenService;
+
     @InjectMocks
     private PasswordResetService passwordResetService;
 
@@ -184,6 +187,7 @@ class PasswordResetServiceTest {
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository, times(1)).save(userCaptor.capture());
+        verify(refreshTokenService).revokeAll(testUser.getId());
         assertEquals("newEncodedPassword", userCaptor.getValue().getPassword());
 
         assertTrue(validToken.getUsed());

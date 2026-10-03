@@ -43,8 +43,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = AuthenticationController.class)
-@Import({TestConfig.class, SecurityConfigurations.class})
+@WebMvcTest(controllers = AuthenticationController.class, properties = "cors.allowed-origins=http://localhost:4200")
+@Import({TestConfig.class, SecurityConfigurations.class, io.github.ronaldobertolucci.mtgdeckbuilder.config.CorsConfiguration.class, io.github.ronaldobertolucci.mtgdeckbuilder.config.security.RefreshCookie.class})
 class AuthenticationControllerTest {
 
     @Autowired
@@ -58,6 +58,9 @@ class AuthenticationControllerTest {
 
     @MockitoBean
     private TokenService tokenService;
+
+    @MockitoBean
+    private io.github.ronaldobertolucci.mtgdeckbuilder.service.security.RefreshTokenService refreshTokens;
 
     @MockitoBean
     private UserService userService;
@@ -98,10 +101,11 @@ class AuthenticationControllerTest {
         when(authentication.getPrincipal()).thenReturn(testUser);
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(authentication);
-        when(tokenService.generateToken(any(User.class))).thenReturn("mock-jwt-token");
+        when(refreshTokens.create(testUser)).thenReturn(new io.github.ronaldobertolucci.mtgdeckbuilder.service.security.RefreshTokenService.Grant(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.dto.security.TokenDto("mock-jwt-token", 7200L, userDto), "refresh-secret", java.time.Instant.now().plusSeconds(600)));
 
         // Act & Assert
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/auth/login").header("X-CSRF-Protection", "1")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginDto)))
@@ -112,7 +116,7 @@ class AuthenticationControllerTest {
                 .andExpect(jsonPath("$.user.firstName").value("John"));
 
         verify(authenticationManager, times(1)).authenticate(any(UsernamePasswordAuthenticationToken.class));
-        verify(tokenService, times(1)).generateToken(testUser);
+        verify(refreshTokens).create(testUser);
     }
 
     @Test
@@ -123,15 +127,83 @@ class AuthenticationControllerTest {
         Authentication authentication = mock(Authentication.class);
         when(authentication.getPrincipal()).thenReturn(testUser);
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(tokenService.generateToken(testUser)).thenReturn("new-token");
+        when(refreshTokens.create(testUser)).thenReturn(new io.github.ronaldobertolucci.mtgdeckbuilder.service.security.RefreshTokenService.Grant(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.dto.security.TokenDto("new-token", 7200L, userDto), "refresh-secret", java.time.Instant.now().plusSeconds(600)));
 
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/auth/login").header("X-CSRF-Protection", "1")
                         .header("Authorization", "Bearer expired-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new LoginDto("john@example.com", "password123"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value("new-token"))
                 .andExpect(jsonPath("$.expiresIn").value(7200));
+    }
+
+    @Test
+    void refreshRotatesCookieAndReturnsAccessToken() throws Exception {
+        when(refreshTokens.rotate("old")).thenReturn(new io.github.ronaldobertolucci.mtgdeckbuilder.service.security.RefreshTokenService.Grant(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.dto.security.TokenDto("new", 7200L, userDto), "rotated", java.time.Instant.now().plusSeconds(600)));
+        mockMvc.perform(post("/auth/refresh").header("X-CSRF-Protection", "1")
+                        .cookie(new jakarta.servlet.http.Cookie("mtg_refresh", "old")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.token").value("new"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Set-Cookie", org.hamcrest.Matchers.allOf(org.hamcrest.Matchers.containsString("mtg_refresh=rotated"),
+                                org.hamcrest.Matchers.containsString("HttpOnly"), org.hamcrest.Matchers.containsString("Secure"),
+                                org.hamcrest.Matchers.containsString("SameSite=Strict"), org.hamcrest.Matchers.containsString("Path=/api/auth"))))
+                .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    }
+
+    @Test
+    void failedRefreshClearsCookie() throws Exception {
+        when(refreshTokens.rotate(null)).thenThrow(new io.github.ronaldobertolucci.mtgdeckbuilder.exception.RefreshAuthenticationException());
+        mockMvc.perform(post("/auth/refresh").header("X-CSRF-Protection", "1"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("SESSION_EXPIRED"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+    }
+
+    @Test
+    void logoutRevokesSessionAndClearsCookie() throws Exception {
+        mockMvc.perform(post("/auth/logout").header("X-CSRF-Protection", "1")
+                        .cookie(new jakarta.servlet.http.Cookie("mtg_refresh", "old")))
+                .andExpect(status().isNoContent())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+        verify(refreshTokens).revoke("old");
+    }
+
+    @Test
+    void cookieEndpointsRejectRequestsWithoutCsrfHeader() throws Exception {
+        for (String path : List.of("/auth/login", "/auth/refresh", "/auth/logout")) {
+            mockMvc.perform(post(path)).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(refreshTokens, authenticationManager);
+    }
+
+    @Test
+    void encodedPathAlsoRequiresCsrfHeader() throws Exception {
+        mockMvc.perform(post(java.net.URI.create("/auth/%72efresh")))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(refreshTokens);
+    }
+
+    @Test
+    void trustedOriginCanPreflightRefreshHeader() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/auth/refresh")
+                        .header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "X-CSRF-Protection"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Access-Control-Allow-Credentials", "true"));
+    }
+
+    @Test
+    void untrustedOriginCannotRefreshEvenWithHeader() throws Exception {
+        mockMvc.perform(post("/auth/refresh").header("X-CSRF-Protection", "1")
+                        .header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(refreshTokens);
     }
 
     @Test
@@ -143,13 +215,13 @@ class AuthenticationControllerTest {
                 .thenThrow(new BadCredentialsException("Invalid credentials"));
 
         // Act & Assert
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/auth/login").header("X-CSRF-Protection", "1")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginDto)))
                 .andExpect(status().isUnauthorized());
 
-        verify(tokenService, never()).generateToken(any(User.class));
+        verifyNoInteractions(refreshTokens);
     }
 
     @Test
@@ -158,7 +230,7 @@ class AuthenticationControllerTest {
         LoginDto invalidDto = new LoginDto("", "password123");
 
         // Act & Assert
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/auth/login").header("X-CSRF-Protection", "1")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidDto)))
@@ -173,7 +245,7 @@ class AuthenticationControllerTest {
         LoginDto invalidDto = new LoginDto("not-an-email", "password123");
 
         // Act & Assert
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/auth/login").header("X-CSRF-Protection", "1")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidDto)))

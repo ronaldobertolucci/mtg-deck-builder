@@ -29,6 +29,7 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokenService;
     @Value("${app.frontend.url}")
     private String frontendUrl;
     @Value("${app.name}")
@@ -90,6 +91,7 @@ public class PasswordResetService {
         User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
+        refreshTokenService.revokeAll(user.getId());
 
         // Marca token como usado
         resetToken.setUsed(true);
