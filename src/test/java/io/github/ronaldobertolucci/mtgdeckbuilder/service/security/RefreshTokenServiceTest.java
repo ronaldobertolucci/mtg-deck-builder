@@ -30,7 +30,7 @@ class RefreshTokenServiceTest {
     @BeforeEach void setup() {
         tokens.deleteAll(); sessions.deleteAll(); users.deleteAll();
         user = users.save(User.builder().firstName("Test").lastName("User").email("refresh@example.com")
-                .password("encoded").dateOfBirth(LocalDate.of(1990, 1, 1)).enabled(true).roles(new HashSet<>()).build());
+                .password("encoded").dateOfBirth(LocalDate.of(1990, 1, 1)).enabled(true).emailVerified(true).roles(new HashSet<>()).build());
         when(accessTokens.generateToken(any())).thenReturn("access-token");
     }
 
@@ -118,5 +118,12 @@ class RefreshTokenServiceTest {
             assertNotEquals(a.get(10, TimeUnit.SECONDS), b.get(10, TimeUnit.SECONDS));
             assertTrue(sessions.findAll().getFirst().isRevoked());
         }
+    }
+    @Test void unconfirmedEmailCannotRenew() {
+        var grant = service.create(user);
+        user.setEmailVerified(false); users.save(user);
+        clearInvocations(accessTokens);
+        assertThrows(RefreshAuthenticationException.class, () -> service.rotate(grant.refreshToken()));
+        verifyNoInteractions(accessTokens);
     }
 }

@@ -34,7 +34,7 @@ class TokenServiceTest {
                 .email("john@example.com")
                 .password("encodedPassword")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
 
@@ -91,7 +91,7 @@ class TokenServiceTest {
                 .email("jane@example.com")
                 .password("password")
                 .dateOfBirth(LocalDate.of(1995, 5, 5))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(new Role(1L, "USER"))))
                 .build();
 

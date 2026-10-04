@@ -85,7 +85,7 @@ class AuthenticationControllerTest {
                 .email("john@example.com")
                 .password("encodedPassword")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
 
@@ -446,28 +446,26 @@ class AuthenticationControllerTest {
     }
 
     @Test
-    void resendVerification_WhenEmailNotFound_ShouldReturn404() throws Exception {
+    void resendVerification_WhenEmailNotFound_ShouldReturn200() throws Exception {
         ResendVerificationDto dto = new ResendVerificationDto("unknown@example.com");
-        doThrow(new EntityNotFoundException("User not found"))
-                .when(emailVerificationService).resendVerificationEmail("unknown@example.com");
+        doNothing().when(emailVerificationService).resendVerificationEmail("unknown@example.com");
 
         mockMvc.perform(post("/auth/resend-verification")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 
     @Test
-    void resendVerification_WhenAccountAlreadyVerified_ShouldReturn400() throws Exception {
+    void resendVerification_WhenAccountAlreadyVerified_ShouldReturn200() throws Exception {
         ResendVerificationDto dto = new ResendVerificationDto("john@example.com");
-        doThrow(new IllegalStateException("Account is already verified"))
-                .when(emailVerificationService).resendVerificationEmail("john@example.com");
+        doNothing().when(emailVerificationService).resendVerificationEmail("john@example.com");
 
         mockMvc.perform(post("/auth/resend-verification")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isOk());
     }
 }

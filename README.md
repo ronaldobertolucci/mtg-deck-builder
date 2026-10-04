@@ -104,6 +104,58 @@ Falha de refresh também apaga o cookie. Credenciais incorretas no login retorna
 401 com a mensagem de erro de login. Rotas públicas continuam disponíveis com um
 Bearer expirado. Decks já persistidos continuam disponíveis após um novo login.
 
+### Estado da conta, confirmação de e-mail e rejeições de login
+
+O modelo separa `users.enabled` (habilitação administrativa) de
+`users.email_verified` (confirmação de e-mail). O acesso exige os dois valores
+verdadeiros. Novos cadastros começam com `enabled=true`, `email_verified=false`.
+Confirmar um token válido altera apenas `email_verified`; habilitar ou desabilitar
+uma conta altera apenas `enabled`. O campo `enabled` do JSON `UserDto` continua
+indicando acesso efetivo (a conjunção dos dois), preservando o formato do login.
+
+Após validar a senha, `POST /api/auth/login` distingue:
+
+| HTTP | `code` | Estado | Orientação para o frontend |
+| --- | --- | --- | --- |
+| 403 | `EMAIL_NOT_VERIFIED` | Conta habilitada, e-mail não confirmado. | Solicitar confirmação e oferecer reenvio. |
+| 403 | `ACCOUNT_DISABLED` | Conta desabilitada, independentemente da confirmação. | Informar bloqueio e orientar contato com suporte; não oferecer reenvio como solução. |
+
+Ambas as respostas usam `Content-Type: application/json` e `Cache-Control: no-store`.
+Exemplo anonimizado de e-mail pendente:
+
+```json
+{
+  "status": 403,
+  "error": "Forbidden",
+  "code": "EMAIL_NOT_VERIFIED",
+  "message": "Email address has not been verified",
+  "path": "/api/auth/login"
+}
+```
+
+Para desabilitação, o mesmo formato contém `code: "ACCOUNT_DISABLED"` e
+`message: "Account is not enabled for sign-in"`. O frontend deve decidir por `code`,
+não comparar `message`, e não tratar esses 403 como indisponibilidade ou expiração.
+Se ambos os impedimentos existem, `ACCOUNT_DISABLED` tem prioridade.
+
+O estado só é informado depois de validar a senha. E-mail inexistente ou senha
+incorreta (inclusive para contas pendentes ou desabilitadas) preservam o contrato
+anterior: 401, `error: "Unauthorized"`, `message: "Invalid email or password"`, sem
+`code` de estado. O provider mantém BCrypt e a proteção de tempo para usuário
+inexistente. Todas as verificações de estado ocorrem antes de concluir a autenticação.
+Rejeições não criam JWT, sessão de refresh ou cookie. Falhas internas do serviço de
+autenticação permanecem 500, sem serem convertidas em erros de estado da conta.
+Login válido, refresh, logout e o requisito de CSRF mantêm seus contratos. Contas
+sem confirmação também não podem renovar sessões.
+
+`POST /api/auth/resend-verification`, com JSON `{"email":"person@example.com"}`,
+só envia e-mail quando `enabled=true` e `email_verified=false`. Para e-mail
+inexistente, já confirmado ou conta desabilitada, retorna o mesmo **200 sem corpo**,
+sem enviar mensagem nem criar token. Isso evita divulgar o estado por esse endpoint
+público. Erros de validação continuam 400 e falhas internas de envio não são ocultadas.
+Um token anteriormente emitido ainda pode confirmar o e-mail de uma conta desabilitada,
+mas não reabilita o acesso. Nenhuma confirmação emite JWT ou sessão.
+
 A rotação segue a orientação de detecção de reutilização do
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2), e a proteção
 por header e CORS segue a [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#employing-custom-request-headers-for-ajaxapi).

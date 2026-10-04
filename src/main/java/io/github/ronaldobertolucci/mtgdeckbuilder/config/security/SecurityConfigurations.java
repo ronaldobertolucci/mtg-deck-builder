@@ -5,7 +5,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -43,8 +45,14 @@ public class SecurityConfigurations {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) {
-        return configuration.getAuthenticationManager();
+    public AuthenticationManager authenticationManager(UserDetailsService users, PasswordEncoder passwordEncoder) {
+        var provider = new DaoAuthenticationProvider(users);
+        provider.setPasswordEncoder(passwordEncoder);
+        // Do not disclose account status until the password has been verified.
+        // All status checks still run before authentication succeeds or tokens are issued.
+        provider.setPreAuthenticationChecks(user -> { });
+        provider.setPostAuthenticationChecks(new AccountAccessChecker());
+        return new ProviderManager(provider);
     }
 
     @Bean

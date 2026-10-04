@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(DeckAnalysisController.class)
-@Import(SecurityConfigurations.class)
+@Import({io.github.ronaldobertolucci.mtgdeckbuilder.service.security.AuthenticationService.class, SecurityConfigurations.class})
 class DeckAnalysisControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.DeckAnalysisService service;

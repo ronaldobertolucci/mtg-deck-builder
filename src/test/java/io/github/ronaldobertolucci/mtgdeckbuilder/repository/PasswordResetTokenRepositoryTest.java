@@ -44,7 +44,7 @@ class PasswordResetTokenRepositoryTest extends BaseRepositoryTest {
                 .email("john@example.com")
                 .password("password")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
         testUser = userRepository.save(testUser);

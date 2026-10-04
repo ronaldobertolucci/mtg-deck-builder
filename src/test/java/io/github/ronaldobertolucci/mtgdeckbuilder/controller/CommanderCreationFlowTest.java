@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(value = DeckController.class, properties = "services.card-manager.url=http://card-manager.test")
-@Import({SecurityConfigurations.class, DeckService.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckImportParserService.class, CommanderValidator.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.Constructed60Validator.class,
+@Import({io.github.ronaldobertolucci.mtgdeckbuilder.service.security.AuthenticationService.class, SecurityConfigurations.class, DeckService.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckImportParserService.class, CommanderValidator.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation.Constructed60Validator.class,
         CardRuleOverrideService.class, CardIntegrationService.class, CardManagerConfiguration.class})
 @ImportAutoConfiguration({RestClientAutoConfiguration.class, CacheAutoConfiguration.class})
 @AutoConfigureMockRestServiceServer

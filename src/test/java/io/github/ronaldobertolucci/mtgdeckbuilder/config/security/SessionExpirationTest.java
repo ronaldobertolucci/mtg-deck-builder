@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers = SessionExpirationTest.Probe.class, properties = {"api.security.token.secret=session-test-secret", "api.security.token.issuer=session-test"})
-@Import({SecurityConfigurations.class, SecurityFilter.class, TokenService.class, SessionExpirationTest.Probe.class})
+@Import({io.github.ronaldobertolucci.mtgdeckbuilder.service.security.AuthenticationService.class, SecurityConfigurations.class, SecurityFilter.class, TokenService.class, SessionExpirationTest.Probe.class})
 class SessionExpirationTest {
     @Autowired MockMvc mvc;
     @MockitoBean UserRepository users;

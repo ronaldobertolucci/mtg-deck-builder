@@ -24,7 +24,7 @@ public record UserDto(
                 user.getLastName(),
                 user.getEmail(),
                 user.getDateOfBirth(),
-                user.getEnabled(),
+                user.isEnabled(),
                 user.getRoles().stream()
                         .map(Role::getName)
                         .collect(Collectors.toSet())

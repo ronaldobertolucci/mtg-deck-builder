@@ -5,8 +5,6 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.model.user.User;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.EmailVerificationTokenRepository;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +17,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class EmailVerificationService {
 
-    private static final Logger logger = LoggerFactory.getLogger(EmailVerificationService.class);
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
@@ -32,6 +29,10 @@ public class EmailVerificationService {
 
     @Transactional
     public void sendVerificationEmail(User user) {
+        if (!Boolean.TRUE.equals(user.getEnabled()) || user.isEmailVerified()) {
+            return;
+        }
+
         EmailVerificationToken token = EmailVerificationToken.builder()
                 .token(UUID.randomUUID().toString())
                 .user(user)
@@ -62,25 +63,20 @@ public class EmailVerificationService {
         token.setUsed(true);
 
         User user = token.getUser();
-        user.setEnabled(true);
+        // Confirmation never clears an administrative access restriction.
+        user.setEmailVerified(true);
     }
 
     @Transactional
     public void resendVerificationEmail(String email) {
         Optional<User> userOptional = userRepository.findByEmailWithRoles(email);
 
+        // Always acknowledge the request without disclosing existence or account state.
         if (userOptional.isEmpty()) {
-            // Por segurança, não revelar que o email não existe
-            logger.info("Password reset requested for non-existent email: {}", email);
             return;
         }
 
         User user = userOptional.get();
-
-        if (user.isEnabled()) {
-            throw new IllegalStateException("Account is already verified");
-        }
-
         sendVerificationEmail(user);
     }
 

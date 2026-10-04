@@ -12,6 +12,8 @@ import java.net.URI;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -125,6 +127,30 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
+
+    @ExceptionHandler(DisabledException.class)
+    public ResponseEntity<Map<String, Object>> handleDisabledAccount(DisabledException ex,
+                                                                    HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).header("Cache-Control", "no-store")
+                .body(Map.of("status", 403, "error", "Forbidden", "code", "ACCOUNT_DISABLED",
+                        "message", "Account is not enabled for sign-in", "path", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailNotVerified(EmailNotVerifiedException ex,
+                                                                     HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).header("Cache-Control", "no-store")
+                .body(Map.of("status", 403, "error", "Forbidden", "code", "EMAIL_NOT_VERIFIED",
+                        "message", "Email address has not been verified", "path", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    public ResponseEntity<ErrorResponseDto> handleAuthenticationServiceFailure(
+            InternalAuthenticationServiceException ex, HttpServletRequest request) {
+        // Infrastructure failures must not be classified by the generic JWT message heuristic.
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponseDto(
+                500, "Internal Server Error", "An unexpected error occurred", request.getRequestURI()));
     }
 
     @ExceptionHandler(RuntimeException.class)

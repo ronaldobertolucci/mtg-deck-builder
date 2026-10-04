@@ -30,7 +30,7 @@ class UserTest {
                 .email("john@example.com")
                 .password("encodedPassword")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
     }
@@ -102,6 +102,12 @@ class UserTest {
         user.setEnabled(false);
 
         // Act & Assert
+        assertFalse(user.isEnabled());
+    }
+    @Test
+    void unconfirmedEmailPreventsAccessEvenWhenEnabled() {
+        user.setEmailVerified(false);
+        assertTrue(user.getEnabled());
         assertFalse(user.isEnabled());
     }
 }

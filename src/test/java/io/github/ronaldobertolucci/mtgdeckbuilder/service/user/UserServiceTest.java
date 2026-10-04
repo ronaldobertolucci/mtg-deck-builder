@@ -60,7 +60,7 @@ class UserServiceTest {
                 .email("john@example.com")
                 .password("encodedPassword")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
 
@@ -100,6 +100,9 @@ class UserServiceTest {
         verify(userRepository, times(1)).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
         assertEquals("encodedPassword", savedUser.getPassword());
+        assertTrue(savedUser.getEnabled());
+        assertFalse(savedUser.isEmailVerified());
+        assertFalse(savedUser.isEnabled());
     }
 
     @Test
@@ -205,5 +208,14 @@ class UserServiceTest {
                 () -> userService.delete(999L));
 
         verify(userRepository, never()).deleteById(anyLong());
+    }
+    @Test
+    void enableDoesNotConfirmEmail() {
+        testUser.setEnabled(false);
+        testUser.setEmailVerified(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        assertFalse(userService.enable(1L).enabled());
+        assertTrue(testUser.getEnabled());
+        assertFalse(testUser.isEmailVerified());
     }
 }

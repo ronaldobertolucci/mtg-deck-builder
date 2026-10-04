@@ -60,7 +60,8 @@ public class UserService {
                 .email(dto.email())
                 .dateOfBirth(dto.dateOfBirth())
                 .password(passwordEncoder.encode(dto.password()))
-                .enabled(false)
+                .enabled(true)
+                .emailVerified(false)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
 

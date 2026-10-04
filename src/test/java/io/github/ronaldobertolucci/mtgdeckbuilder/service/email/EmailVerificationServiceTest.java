@@ -39,7 +39,8 @@ class EmailVerificationServiceTest {
                 .firstName("John")
                 .lastName("Doe")
                 .email("john@example.com")
-                .enabled(false)
+                .enabled(true)
+                .emailVerified(false)
                 .build();
     }
 
@@ -92,7 +93,7 @@ class EmailVerificationServiceTest {
     // -------------------------------------------------------------------------
 
     @Test
-    void verifyEmail_WhenTokenIsValid_ShouldEnableUserAndMarkTokenAsUsed() {
+    void verifyEmail_WhenTokenIsValid_ShouldConfirmEmailAndMarkTokenAsUsed() {
         EmailVerificationToken token = buildToken(false, LocalDateTime.now().plusHours(24));
         when(tokenRepository.findByToken("valid-token")).thenReturn(Optional.of(token));
 
@@ -100,6 +101,7 @@ class EmailVerificationServiceTest {
 
         assertTrue(token.isUsed());
         assertTrue(token.getUser().isEnabled());
+        assertTrue(token.getUser().isEmailVerified());
     }
 
     @Test
@@ -155,7 +157,7 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void resendVerificationEmail_WhenUserNotFound_ShouldThrowEntityNotFoundException() {
+    void resendVerificationEmail_WhenUserNotFound_ShouldAcknowledgeWithoutSending() {
         when(userRepository.findByEmailWithRoles("unknown@example.com")).thenReturn(Optional.empty());
 
         assertDoesNotThrow(() -> emailVerificationService.resendVerificationEmail("unknown@example.com"));
@@ -165,12 +167,11 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void resendVerificationEmail_WhenAccountAlreadyVerified_ShouldThrowIllegalStateException() {
-        user.setEnabled(true);
+    void resendVerificationEmail_WhenAccountAlreadyVerified_ShouldAcknowledgeWithoutSending() {
+        user.setEmailVerified(true);
         when(userRepository.findByEmailWithRoles("john@example.com")).thenReturn(Optional.of(user));
 
-        assertThrows(IllegalStateException.class,
-                () -> emailVerificationService.resendVerificationEmail("john@example.com"));
+        assertDoesNotThrow(() -> emailVerificationService.resendVerificationEmail("john@example.com"));
 
         verify(tokenRepository, never()).save(any());
         verify(emailService, never()).sendHtmlEmail(any(), any(), any());
@@ -179,6 +180,33 @@ class EmailVerificationServiceTest {
     // -------------------------------------------------------------------------
     // Builders
     // -------------------------------------------------------------------------
+
+
+    @Test
+    void verifyEmail_WhenDisabled_ShouldConfirmWithoutEnablingAccount() {
+        user.setEnabled(false);
+        EmailVerificationToken token = buildToken(false, LocalDateTime.now().plusHours(24));
+        when(tokenRepository.findByToken("valid-token")).thenReturn(Optional.of(token));
+
+        emailVerificationService.verifyEmail("valid-token");
+
+        assertTrue(token.isUsed());
+        assertTrue(user.isEmailVerified());
+        assertFalse(user.getEnabled());
+        assertFalse(user.isEnabled());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void resendVerificationEmail_WhenDisabled_ShouldNotSend(boolean confirmed) {
+        user.setEnabled(false);
+        user.setEmailVerified(confirmed);
+        when(userRepository.findByEmailWithRoles(user.getEmail())).thenReturn(Optional.of(user));
+
+        assertDoesNotThrow(() -> emailVerificationService.resendVerificationEmail(user.getEmail()));
+
+        verifyNoInteractions(tokenRepository, emailService);
+    }
 
     private EmailVerificationToken buildToken(boolean used, LocalDateTime expiryDate) {
         return EmailVerificationToken.builder()

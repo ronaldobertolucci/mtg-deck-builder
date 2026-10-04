@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = PasswordResetController.class)
-@Import({TestConfig.class, SecurityConfigurations.class})
+@Import({TestConfig.class, SecurityConfigurations.class, io.github.ronaldobertolucci.mtgdeckbuilder.service.security.AuthenticationService.class})
 class PasswordResetControllerTest {
 
     @Autowired

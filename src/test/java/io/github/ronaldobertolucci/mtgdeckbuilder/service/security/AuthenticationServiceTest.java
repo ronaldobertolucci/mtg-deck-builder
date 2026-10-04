@@ -43,7 +43,7 @@ class AuthenticationServiceTest {
                 .email("john@example.com")
                 .password("encodedPassword")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .enabled(true)
+                .enabled(true).emailVerified(true)
                 .roles(new HashSet<>(Set.of(userRole)))
                 .build();
     }
