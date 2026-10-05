@@ -11,6 +11,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.repository.UserRepository;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.security.PasswordResetService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.security.TokenService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -171,19 +174,22 @@ class PasswordResetControllerTest {
         verify(passwordResetService, never()).resetPassword(anyString(), anyString());
     }
 
-    @Test
-    void resetPassword_WhenPasswordIsBlank_ShouldReturnBadRequest() throws Exception {
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"        ", "1234567"})
+    void resetPassword_WhenPasswordIsInvalid_ShouldReturnBadRequest(String password) throws Exception {
         // Arrange
-        PasswordResetTokenResetDto dto = new PasswordResetTokenResetDto("valid-token", "");
+        PasswordResetTokenResetDto dto = new PasswordResetTokenResetDto("valid-token", password);
 
         // Act & Assert
         mockMvc.perform(post("/password/reset")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[*].field", org.hamcrest.Matchers.hasItem("newPassword")));
 
-        verify(passwordResetService, never()).resetPassword(anyString(), anyString());
+        verifyNoInteractions(passwordResetService);
     }
 
     @Test
