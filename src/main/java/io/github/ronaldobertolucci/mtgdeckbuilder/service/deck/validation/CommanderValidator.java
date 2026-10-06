@@ -8,6 +8,7 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardRuleOverrideS
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
@@ -54,7 +55,8 @@ public class CommanderValidator implements FormatValidatorStrategy {
             throw new RuleViolationException("Commander decks cannot exceed " + (100 - commanders)
                     + " mainboard cards and 100 cards in total");
         }
-        int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1));
+        int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1),
+                newCard.getBoardType() == BoardType.COMMANDER ? "commanderOracleIds" : "oracleId");
         long copies = deck.getCards().stream()
                 .filter(card -> card.getBoardType() == BoardType.MAINBOARD || card.getBoardType() == BoardType.COMMANDER
                         || card.getBoardType() == BoardType.COMPANION)
@@ -70,11 +72,12 @@ public class CommanderValidator implements FormatValidatorStrategy {
             }
         }
         if (newCard.getBoardType() == BoardType.COMMANDER) team.add(cardDetails);
-        for (var commander : team) CardLegalityRules.enforce(commander, Format.COMMANDER, 1);
-        CommanderPairRules.validate(team);
+        for (var commander : team) CardLegalityRules.enforce(commander, Format.COMMANDER, 1, "commanderOracleIds");
+        if (team.size() == 1) CommanderEligibilityRules.validate(team.getFirst());
+        else CommanderPairRules.validate(team);
         Set<String> colors = new HashSet<>();
         for (var commander : team) {
-            requireKnownColorIdentity(commander);
+            requireKnownColorIdentity(commander, "commanderOracleIds");
             colors.addAll(commander.colorIdentity());
         }
         if (newCard.getBoardType() == BoardType.COMMANDER) {
@@ -104,15 +107,17 @@ public class CommanderValidator implements FormatValidatorStrategy {
     }
 
     private void validateColors(CardDetailsResponse card, Set<String> commanderColors) {
-        requireKnownColorIdentity(card);
+        requireKnownColorIdentity(card, "oracleId");
         if (!commanderColors.containsAll(card.colorIdentity())) {
             throw new RuleViolationException("Card color identity is outside the commander's color identity: " + card.name());
         }
     }
 
-    private void requireKnownColorIdentity(CardDetailsResponse card) {
+    private void requireKnownColorIdentity(CardDetailsResponse card, String field) {
         if (card.colorIdentity() == null) {
-            throw new RuleViolationException("Unknown color identity; compatibility cannot be confirmed: " + card.name());
+            throw new RuleViolationException(RuleErrorCode.COLOR_IDENTITY_UNKNOWN,
+                    "Unknown color identity; compatibility cannot be confirmed: " + card.name(),
+                    field, card.oracleId() == null ? List.of() : List.of(card.oracleId()));
         }
     }
 }

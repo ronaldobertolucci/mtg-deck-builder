@@ -1,0 +1,47 @@
+{
+  "oracle_id": "594f6881-c059-46f8-aa4e-7151d502de73",
+  "name": "Jace, Vryn's Prodigy // Jace, Telepath Unbound",
+  "type_line": "Legendary Creature — Human Wizard // Legendary Planeswalker — Jace",
+  "oracle_text": null,
+  "layout": "transform",
+  "color_identity": [
+    "U"
+  ],
+  "legalities": {
+    "standard": "not_legal",
+    "future": "not_legal",
+    "historic": "legal",
+    "timeless": "legal",
+    "gladiator": "legal",
+    "pioneer": "legal",
+    "modern": "legal",
+    "legacy": "legal",
+    "pauper": "not_legal",
+    "vintage": "legal",
+    "penny": "not_legal",
+    "commander": "legal",
+    "oathbreaker": "legal",
+    "standardbrawl": "not_legal",
+    "brawl": "legal",
+    "competitivebrawl": "legal",
+    "alchemy": "not_legal",
+    "paupercommander": "not_legal",
+    "duel": "legal",
+    "oldschool": "not_legal",
+    "premodern": "not_legal",
+    "predh": "not_legal",
+    "tlr": "legal"
+  },
+  "card_faces": [
+    {
+      "name": "Jace, Vryn's Prodigy",
+      "type_line": "Legendary Creature — Human Wizard",
+      "oracle_text": "{T}: Draw a card, then discard a card. If there are five or more cards in your graveyard, exile Jace, then return him to the battlefield transformed under his owner's control."
+    },
+    {
+      "name": "Jace, Telepath Unbound",
+      "type_line": "Legendary Planeswalker — Jace",
+      "oracle_text": "+1: Up to one target creature gets -2/-0 until your next turn.\n−3: You may cast target instant or sorcery card from your graveyard this turn. If that spell would be put into your graveyard, exile it instead.\n−9: You get an emblem with \"Whenever you cast a spell, target opponent mills five cards.\""
+    }
+  ]
+}

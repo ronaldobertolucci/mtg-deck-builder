@@ -1,0 +1,12 @@
+package io.github.ronaldobertolucci.mtgdeckbuilder.exception;
+
+public enum RuleErrorCode {
+    INVALID_COMMANDER_SELECTION,
+    COMMANDER_NOT_ELIGIBLE,
+    INCOMPATIBLE_COMMANDER_PAIR,
+    CARD_BANNED,
+    CARD_NOT_LEGAL,
+    CARD_LEGALITY_UNKNOWN,
+    COMMANDER_DATA_INCOMPLETE,
+    COLOR_IDENTITY_UNKNOWN
+}

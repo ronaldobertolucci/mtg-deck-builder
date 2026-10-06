@@ -96,7 +96,7 @@ public class DeckService {
                 || ids.stream().distinct().count() != ids.size()
                 || (request.format() == Format.COMMANDER && ids.isEmpty())
                 || (request.format() != Format.COMMANDER && !ids.isEmpty())) {
-            throw new RuleViolationException("Invalid commander selection");
+            throw new RuleViolationException(RuleErrorCode.INVALID_COMMANDER_SELECTION, "Invalid commander selection", "commanderOracleIds", ids);
         }
         for (UUID id : ids) deck.addCard(new DeckCard(id, 1, BoardType.COMMANDER));
         accessories.addAccessories(deck, validateCommanders(deck));

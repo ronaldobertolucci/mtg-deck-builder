@@ -154,4 +154,13 @@ class DeckAnalysisServiceTest {
     @Test void absentCommander() { deck.setFormat(Format.COMMANDER); basic(100,BoardType.MAINBOARD); expect(DeckStatus.IRREGULAR); }
     @Test void anotherOwner() { assertThatThrownBy(() -> service.analyze(99L,deckId)).isInstanceOf(DeckNotFoundException.class); verifyNoInteractions(integration); }
     @Test void reanalysisReplacesMessages() { basic(59,BoardType.MAINBOARD); expect(DeckStatus.IRREGULAR); basic(1,BoardType.MAINBOARD); expect(DeckStatus.REGULAR); assertThat(deck.getAnalysisMessages()).isEmpty(); }
+    @Test void incompleteCommanderFacesAreUncertaintyRatherThanConfirmedViolation() {
+        commander(99, false);
+        var row = deck.getCards().stream().filter(c -> c.getBoardType() == BoardType.COMMANDER).findFirst().orElseThrow();
+        when(integration.refreshCardDetails(row.getOracleId())).thenReturn(new CardDetailsResponse(
+                row.getOracleId(), "Front // Back", "Legendary Creature", null, List.of("U"),
+                Map.of("commander", CardLegality.LEGAL), List.of(), null, null, null, List.of(), "modal_dfc", List.of()));
+        expect(DeckStatus.UNDEFINED);
+    }
+
 }

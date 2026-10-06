@@ -1,0 +1,51 @@
+{
+  "oracle_id": "92023a5d-a143-4950-a71b-d736e6b8e959",
+  "name": "Esika, God of the Tree // The Prismatic Bridge",
+  "type_line": "Legendary Creature — God // Legendary Enchantment",
+  "oracle_text": null,
+  "layout": "modal_dfc",
+  "color_identity": [
+    "B",
+    "G",
+    "R",
+    "U",
+    "W"
+  ],
+  "legalities": {
+    "standard": "not_legal",
+    "future": "not_legal",
+    "historic": "legal",
+    "timeless": "legal",
+    "gladiator": "legal",
+    "pioneer": "legal",
+    "modern": "legal",
+    "legacy": "legal",
+    "pauper": "not_legal",
+    "vintage": "legal",
+    "penny": "legal",
+    "commander": "legal",
+    "oathbreaker": "legal",
+    "standardbrawl": "not_legal",
+    "brawl": "legal",
+    "competitivebrawl": "legal",
+    "alchemy": "not_legal",
+    "paupercommander": "not_legal",
+    "duel": "legal",
+    "oldschool": "not_legal",
+    "premodern": "not_legal",
+    "predh": "not_legal",
+    "tlr": "not_legal"
+  },
+  "card_faces": [
+    {
+      "name": "Esika, God of the Tree",
+      "type_line": "Legendary Creature — God",
+      "oracle_text": "Vigilance\n{T}: Add one mana of any color.\nOther legendary creatures you control have vigilance and \"{T}: Add one mana of any color.\""
+    },
+    {
+      "name": "The Prismatic Bridge",
+      "type_line": "Legendary Enchantment",
+      "oracle_text": "At the beginning of your upkeep, reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order."
+    }
+  ]
+}

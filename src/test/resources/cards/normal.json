@@ -1,0 +1,36 @@
+{
+  "oracle_id": "cfb756dd-6fe1-430a-8f04-8b10cac62a86",
+  "name": "Isamaru, Hound of Konda",
+  "type_line": "Legendary Creature — Dog",
+  "oracle_text": "",
+  "layout": "normal",
+  "color_identity": [
+    "W"
+  ],
+  "legalities": {
+    "standard": "not_legal",
+    "future": "not_legal",
+    "historic": "legal",
+    "timeless": "legal",
+    "gladiator": "legal",
+    "pioneer": "not_legal",
+    "modern": "legal",
+    "legacy": "legal",
+    "pauper": "not_legal",
+    "vintage": "legal",
+    "penny": "legal",
+    "commander": "legal",
+    "oathbreaker": "legal",
+    "standardbrawl": "not_legal",
+    "brawl": "legal",
+    "competitivebrawl": "legal",
+    "alchemy": "not_legal",
+    "paupercommander": "not_legal",
+    "duel": "legal",
+    "oldschool": "not_legal",
+    "premodern": "not_legal",
+    "predh": "legal",
+    "tlr": "legal"
+  },
+  "card_faces": []
+}

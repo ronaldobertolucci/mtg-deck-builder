@@ -140,4 +140,21 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
         assertNotNull(response.getBody());
     }
+    @Test
+    void domainRuleMetadataExtendsProblemDetailsAndLegacyExceptionsRemainSupported() {
+        var id = java.util.UUID.randomUUID();
+        var exception = new RuleViolationException(RuleErrorCode.INCOMPATIBLE_COMMANDER_PAIR,
+                "Incompatible pair", "commanderOracleIds", List.of(id));
+        var response = exceptionHandler.handleRuleViolation(exception, request);
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.getStatusCode());
+        assertEquals(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON, response.getHeaders().getContentType());
+        assertEquals("Incompatible pair", response.getBody().getDetail());
+        assertEquals("INCOMPATIBLE_COMMANDER_PAIR", response.getBody().getProperties().get("code"));
+        assertEquals("commanderOracleIds", response.getBody().getProperties().get("field"));
+        assertEquals(List.of(id), response.getBody().getProperties().get("oracleIds"));
+        var legacy = exceptionHandler.handleRuleViolation(new RuleViolationException("Legacy rule"), request);
+        assertEquals("Legacy rule", legacy.getBody().getDetail());
+        assertNull(legacy.getBody().getProperties());
+    }
+
 }

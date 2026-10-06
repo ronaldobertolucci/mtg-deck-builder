@@ -91,7 +91,11 @@ public class DeckAnalysisService {
                 && leaderRows.stream().allMatch(c -> details.containsKey(c.getOracleId()))) {
             var team = leaderRows.stream().map(c -> details.get(c.getOracleId())).toList();
             try { CommanderPairRules.validate(team); }
-            catch (RuleViolationException ex) { violations.add(ex.getMessage()); }
+            catch (RuleViolationException ex) {
+                if (ex.getCode() == io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode.COMMANDER_DATA_INCOMPLETE)
+                    uncertainties.add(ex.getMessage());
+                else violations.add(ex.getMessage());
+            }
             // An incomplete commander identity cannot establish an out-of-identity violation.
             if (team.stream().allMatch(c -> c.colorIdentity() != null)) {
                 Set<String> colors = new HashSet<>();

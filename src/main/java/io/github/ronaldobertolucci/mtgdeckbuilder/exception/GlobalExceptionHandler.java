@@ -70,7 +70,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuleViolationException.class)
     public ResponseEntity<ProblemDetail> handleRuleViolation(RuleViolationException ex, HttpServletRequest request) {
-        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+        var response = problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+        if (ex.getCode() != null) response.getBody().setProperty("code", ex.getCode().name());
+        if (ex.getField() != null) response.getBody().setProperty("field", ex.getField());
+        if (!ex.getOracleIds().isEmpty()) response.getBody().setProperty("oracleIds", ex.getOracleIds());
+        return response;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -78,7 +82,10 @@ public class GlobalExceptionHandler {
                                                                HttpServletRequest request) {
         var response = problem(HttpStatus.BAD_REQUEST, "Invalid request fields", request);
         response.getBody().setProperty("errors", ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> Map.of("field", error.getField(), "message",
+                .map(error -> Map.of("field", error.getField(), "code",
+                        error.getField().startsWith("commanderOracleIds")
+                                ? "INVALID_COMMANDER_SELECTION" : "INVALID_FIELD",
+                        "message",
                         error.getDefaultMessage() == null ? "Invalid value" : error.getDefaultMessage())).toList());
         return response;
     }

@@ -152,8 +152,62 @@ class CommanderCreationFlowTest {
                 .andExpect(status().is(422))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.status").value(422));
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.code").value(legality.equals("not_legal") ? "CARD_NOT_LEGAL" : "CARD_BANNED"))
+                .andExpect(jsonPath("$.field").value("commanderOracleIds"))
+                .andExpect(jsonPath("$.oracleIds[0]").value(oracleId.toString()));
         verifyNoInteractions(decks);
         server.verify();
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"esika", "jace", "normal", "invasion"})
+    void createsOrRejectsCommanderFromCapturedCatalogPayload(String fixture) throws Exception {
+        String payload;
+        try (var stream = getClass().getResourceAsStream("/cards/" + fixture + ".json")) {
+            payload = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var card = tools.jackson.databind.json.JsonMapper.builder().build().readValue(payload,
+                io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse.class);
+        server.expect(requestTo("http://card-manager.test/cards/" + card.oracleId() + "?lang=en"))
+                .andRespond(withSuccess(payload, MediaType.APPLICATION_JSON));
+        User user = new User(); user.setId(42L);
+        boolean eligible = !fixture.equals("invasion");
+        if (eligible) when(decks.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        var result = mvc.perform(post("/decks")
+                .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Faces","format":"COMMANDER","commanderOracleIds":["%s"]}
+                        """.formatted(card.oracleId())));
+        if (eligible) {
+            result.andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("UNDEFINED"))
+                    .andExpect(jsonPath("$.cards[0].oracleId").value(card.oracleId().toString()))
+                    .andExpect(jsonPath("$.cards[0].quantity").value(1))
+                    .andExpect(jsonPath("$.cards[0].boardType").value("COMMANDER"));
+        } else {
+            result.andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value("COMMANDER_NOT_ELIGIBLE"))
+                    .andExpect(jsonPath("$.field").value("commanderOracleIds"))
+                    .andExpect(jsonPath("$.oracleIds[0]").value(card.oracleId().toString()));
+            verifyNoInteractions(decks);
+        }
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"[]", "null", "[null]",
+            "[\"00000000-0000-0000-0000-000000000001\",\"00000000-0000-0000-0000-000000000001\"]",
+            "[\"00000000-0000-0000-0000-000000000001\",\"00000000-0000-0000-0000-000000000002\",\"00000000-0000-0000-0000-000000000003\"]"})
+    void invalidSelectionReturnsStructured400WithoutAccessingDependencies(String selection) throws Exception {
+        User user = new User(); user.setId(42L);
+        mvc.perform(post("/decks")
+                .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Selection\",\"format\":\"COMMANDER\",\"commanderOracleIds\":" + selection + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].code").value("INVALID_COMMANDER_SELECTION"));
+        verifyNoInteractions(decks);
+        server.verify();
+    }
+
 }

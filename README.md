@@ -317,7 +317,8 @@ GET /cards/{oracleId}?lang=en
 
 O parâmetro `lang=en` é sempre enviado porque as regras de override e de comandantes
 interpretam os textos oficiais em inglês. O DTO utiliza `oracle_id`, `name`,
-`type_line`, `oracle_text`, `color_identity`, `legalities` e `keywords`.
+`type_line`, `oracle_text`, `color_identity`, `legalities`, `keywords`, `layout` e
+`card_faces` (nome, tipo e texto de cada face).
 
 1. Na criação de Commander e na inclusão ou atualização de cartas, o serviço obtém
    os metadados usando cache por oracle ID.
@@ -643,6 +644,27 @@ RESTRICTED é tratado pelo domínio, embora VINTAGE não seja um formato suporta
 
 ### Comandantes e companion
 
+`CommanderEligibilityRules.validate(CardDetailsResponse)` valida um comandante único
+sem realizar consultas externas. Rejeita primeiro cartas banidas, não legais ou com
+legalidade desconhecida, e depois exige uma criatura lendária ou permissão Oracle
+explícita da própria carta (`<nome> can be your commander.`). Um Background isolado
+não é aceito; sua seleção depende de Choose a Background.
+
+Para `modal_dfc`, `transform`, `flip` e `adventure`, o validador usa o nome, tipo e
+texto da primeira entrada de `card_faces`. Não combina características das faces
+nem usa permissão ou Partner presentes somente no verso. As cartas de dupla-face
+seguem a regra 712.8a; flip e adventure usam suas características iniciais/principais.
+A identidade continua vindo de `color_identity` da carta inteira, incluindo as
+faces aplicáveis (regra 903.4d). `null` significa identidade desconhecida e `[]`
+significa identidade incolor confirmada.
+
+Se um layout exigir faces e a face principal estiver ausente ou incompleta, a
+criação retorna `COMMANDER_DATA_INCOMPLETE`. Layouts multiface sem interpretação
+implementada também não são aprovados por uma combinação dos tipos da raiz. Na
+análise de um deck existente, dados insuficientes são incerteza (`UNDEFINED`),
+a menos que também exista uma violação confirmada, que produz `IRREGULAR`.
+
+
 A aplicação reconhece pares com Partner, Partner with, Friends Forever,
 Doctor's companion e Choose a Background, conforme as regras implementadas para
 cada combinação. A identidade de cor do deck é a união das identidades dos
@@ -723,7 +745,13 @@ com `Content-Type: application/problem+json`:
   "title": "Unprocessable Entity",
   "status": 422,
   "detail": "The two commanders do not have compatible partner abilities",
-  "instance": "/api/decks"
+  "instance": "/api/decks",
+  "code": "INCOMPATIBLE_COMMANDER_PAIR",
+  "field": "commanderOracleIds",
+  "oracleIds": [
+    "00000000-0000-0000-0000-000000000001",
+    "00000000-0000-0000-0000-000000000002"
+  ]
 }
 ```
 
@@ -733,6 +761,29 @@ com `Content-Type: application/problem+json`:
 | 404 Not Found | Deck inexistente/não pertencente ao usuário ou carta não encontrada por oracle ID. Na importação por nome, carta não encontrada retorna 422. |
 | 422 Unprocessable Entity | Violação de regra ao criar ou editar o deck. |
 | 503 Service Unavailable | Card Manager indisponível durante criação ou edição. |
+
+As rejeições relacionadas a comandantes expõem códigos estáveis. `detail` continua
+sendo uma mensagem técnica; o frontend pode traduzir `code` e destacar `oracleIds`.
+`field` é incluído quando há um campo aplicável (`commanderOracleIds` ou `oracleId`).
+Os metadados são extensões opcionais: outras regras existentes podem retornar apenas
+o Problem Details básico.
+
+| Código | Significado |
+| --- | --- |
+| `INVALID_COMMANDER_SELECTION` | Seleção ausente, duplicada, com IDs nulos, excessiva ou incompatível com o formato. |
+| `COMMANDER_NOT_ELIGIBLE` | Carta não pode ser o comandante selecionado. |
+| `INCOMPATIBLE_COMMANDER_PAIR` | Cartas elegíveis, mas sem combinação compatível. |
+| `CARD_BANNED` | Carta banida no formato. |
+| `CARD_NOT_LEGAL` | Carta não legal no formato. |
+| `CARD_LEGALITY_UNKNOWN` | Legalidade ausente ou desconhecida. |
+| `COMMANDER_DATA_INCOMPLETE` | Características necessárias à elegibilidade não confirmadas. |
+| `COLOR_IDENTITY_UNKNOWN` | Identidade de cor não confirmada. |
+
+Na validação de entrada (400), cada item de `errors` contém `field`, `message` e
+`code`: `INVALID_COMMANDER_SELECTION` para `commanderOracleIds` e seus elementos;
+`INVALID_FIELD` para outros campos. JSON malformado mantém o retorno 400 genérico.
+O serviço também protege a seleção em chamadas internas, usando o código de seleção
+com 422. Não é preciso comparar mensagens em inglês para esses motivos.
 
 Os fluxos de autenticação também possuem tratamentos próprios de erro; nem todas as
 respostas da aplicação usam o mesmo envelope. O formato do deck não pode ser alterado.
@@ -809,3 +860,30 @@ aprovação pela Wizards nem substitui o cumprimento dessa política.
 
 Os créditos e avisos sobre dados e marcas não concedem uma licença para o código-fonte.
 O repositório ainda não contém um arquivo LICENSE que defina sua licença de distribuição.
+
+### Verificação da criação de Commander
+
+As fixtures em `src/test/resources/cards` foram capturadas do Card Manager local
+em 2026-10-06 e reduzidas aos campos de regras. Incluem Isamaru, Esika, Jace e
+Invasion of Ikoria. Esta última reproduz o erro anterior: criatura lendária somente
+no verso, com `type_line` combinado na raiz. Os testes comuns são independentes do
+catálogo em execução.
+
+`CommanderCreationTransactionTest` verifica persistência real e ausência de registros
+após falha, usando o banco do perfil de teste. Para um teste adicional com o Card
+Manager real, use **um banco descartável** e execute:
+
+```bash
+COMMANDER_LIVE_TEST_URL=http://localhost:8002 \
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/commander_tests \
+SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver \
+SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT=org.hibernate.dialect.PostgreSQLDialect \
+SPRING_DATASOURCE_USERNAME=commander_test \
+SPRING_DATASOURCE_PASSWORD=commander_test \
+./mvnw -Dtest=CommanderLiveIntegrationTest test
+```
+
+Sem `COMMANDER_LIVE_TEST_URL`, o teste vivo é ignorado. Ele consulta Esika,
+Isamaru e Invasion of Ikoria, verifica rejeições sem persistência e cria/remove
+somente o próprio deck de teste. Os casos de identidade desconhecida usam fixtures
+nos testes transacionais para não modificar o catálogo real.
