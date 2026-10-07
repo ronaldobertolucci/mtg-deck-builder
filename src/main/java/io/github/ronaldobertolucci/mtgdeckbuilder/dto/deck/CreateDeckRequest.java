@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.UUID;
 
 @ValidCommander
-public record CreateDeckRequest(@NotBlank @Size(max = 255) String name,
-                                @NotNull Format format,
-                                @Size(max = 2) List<@NotNull UUID> commanderOracleIds) {}
+public record CreateDeckRequest(@NotBlank(message = "Deck name is required") @Size(max = 255, message = "Deck name must not exceed 255 characters") String name,
+                                @NotNull(message = "Format is required") Format format,
+                                @Size(max = 2, message = "At most two commander oracle IDs are allowed")
+                                List<@NotNull(message = "Commander oracle ID is required") UUID> commanderOracleIds) {}

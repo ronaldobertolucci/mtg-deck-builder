@@ -33,8 +33,9 @@ public class DeckController {
 
     @GetMapping
     public PagedModel<DeckSummaryResponse> list(@AuthenticationPrincipal User user,
-                                               @RequestParam(defaultValue = "0") @Min(0) int page,
-                                               @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+                                               @RequestParam(defaultValue = "0") @Min(value = 0, message = "Page must be zero or greater") int page,
+                                               @RequestParam(defaultValue = "20") @Min(value = 1, message = "Page size must be at least 1")
+                                               @Max(value = 100, message = "Page size must not exceed 100") int size) {
         return new PagedModel<>(service.list(user.getId(), page, size));
     }
 

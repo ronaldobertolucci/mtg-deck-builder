@@ -736,6 +736,11 @@ integral de todas as regras de Magic.
 
 ### Respostas de erro
 
+As mensagens de erro da API são em inglês. As validações de entrada usam
+mensagens explícitas em inglês, inclusive quando a requisição informa
+`Accept-Language: pt-BR`. O frontend pode traduzir os códigos de erro para
+o idioma da interface.
+
 Erros de domínio e validação dos endpoints de decks utilizam Problem Details,
 com `Content-Type: application/problem+json`:
 

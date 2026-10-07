@@ -402,4 +402,16 @@ class DeckControllerTest {
                 .content("{\"name\":\"Deck\",\"format\":\"MODERN\"}")).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
+    @Test void validationResponseRemainsEnglishWithPortugueseAcceptLanguage() throws Exception {
+        mvc.perform(put("/decks/{id}/cards", deckId).with(owner())
+                        .header("Accept-Language", "pt-BR")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"oracleId\":null,\"boardType\":null,\"quantity\":-1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Invalid request fields"))
+                .andExpect(jsonPath("$.errors[*].message", org.hamcrest.Matchers.containsInAnyOrder(
+                        "Oracle ID is required", "Board type is required", "Quantity must be zero or greater")));
+        verifyNoInteractions(service);
+    }
+
 }
