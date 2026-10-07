@@ -778,6 +778,16 @@ o Problem Details básico.
 | `CARD_LEGALITY_UNKNOWN` | Legalidade ausente ou desconhecida. |
 | `COMMANDER_DATA_INCOMPLETE` | Características necessárias à elegibilidade não confirmadas. |
 | `COLOR_IDENTITY_UNKNOWN` | Identidade de cor não confirmada. |
+| `COPY_LIMIT_EXCEEDED` | Quantidade excede o limite de cópias da carta no formato, somando as zonas aplicáveis. |
+| `COLOR_IDENTITY_INCOMPATIBLE` | Identidade de cor da carta incompatível com a identidade dos comandantes. |
+| `COMMANDER_SIZE_LIMIT_EXCEEDED` | Mainboard e comandantes ultrapassam o total de 100 cartas. |
+
+Esses três últimos motivos retornam `detail` seguro em inglês, sem interpolar
+nomes ou textos recebidos do catálogo. Limites de cópias e tamanho indicam
+`field: "quantity"`; identidade incompatível indica `field: "oracleId"`.
+`oracleIds` identifica a carta afetada. Uma inclusão ou atualização rejeitada
+preserva as quantidades salvas e a análise anterior do deck. O frontend deve
+manter a quantidade confirmada pelo servidor ao receber 422.
 
 Na validação de entrada (400), cada item de `errors` contém `field`, `message` e
 `code`: `INVALID_COMMANDER_SELECTION` para `commanderOracleIds` e seus elementos;

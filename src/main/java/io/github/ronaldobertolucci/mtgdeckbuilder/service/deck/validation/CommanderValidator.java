@@ -52,8 +52,9 @@ public class CommanderValidator implements FormatValidatorStrategy {
             throw new RuleViolationException("Commander decks require one or two distinct commanders, with one copy each");
         }
         if (mainboard + commanders > 100) {
-            throw new RuleViolationException("Commander decks cannot exceed " + (100 - commanders)
-                    + " mainboard cards and 100 cards in total");
+            throw new RuleViolationException(RuleErrorCode.COMMANDER_SIZE_LIMIT_EXCEEDED,
+                    "Commander decks cannot exceed 100 cards, including commanders.",
+                    "quantity", List.of(newCard.getOracleId()));
         }
         int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails, 1),
                 newCard.getBoardType() == BoardType.COMMANDER ? "commanderOracleIds" : "oracleId");
@@ -63,7 +64,9 @@ public class CommanderValidator implements FormatValidatorStrategy {
                 .filter(card -> card.getOracleId().equals(newCard.getOracleId()))
                 .mapToLong(DeckCard::getQuantity).sum() + newCard.getQuantity();
         if (limit != Integer.MAX_VALUE && copies > limit) {
-            throw new RuleViolationException("Copy limit exceeded for " + cardDetails.name() + ": " + limit);
+            throw new RuleViolationException(RuleErrorCode.COPY_LIMIT_EXCEEDED,
+                    "Copy limit exceeded for this card (maximum: " + limit + ").",
+                    "quantity", List.of(newCard.getOracleId()));
         }
         List<CardDetailsResponse> team = new ArrayList<>();
         for (DeckCard card : deck.getCards()) {
@@ -109,7 +112,9 @@ public class CommanderValidator implements FormatValidatorStrategy {
     private void validateColors(CardDetailsResponse card, Set<String> commanderColors) {
         requireKnownColorIdentity(card, "oracleId");
         if (!commanderColors.containsAll(card.colorIdentity())) {
-            throw new RuleViolationException("Card color identity is outside the commander's color identity: " + card.name());
+            throw new RuleViolationException(RuleErrorCode.COLOR_IDENTITY_INCOMPATIBLE,
+                    "This card's color identity is incompatible with the color identity of the deck's commanders.",
+                    "oracleId", List.of(card.oracleId()));
         }
     }
 

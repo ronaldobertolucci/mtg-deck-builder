@@ -210,4 +210,63 @@ class CommanderCreationFlowTest {
         server.verify();
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "MODERN,COPY_LIMIT_EXCEEDED,quantity,5,4",
+            "COMMANDER,COPY_LIMIT_EXCEEDED,quantity,2,1",
+            "COMMANDER,COLOR_IDENTITY_INCOMPATIBLE,oracleId,2,1",
+            "COMMANDER,COMMANDER_SIZE_LIMIT_EXCEEDED,quantity,100,1"
+    })
+    void cardEditReturnsSpecificEnglishRejectionAndKeepsSavedQuantity(
+            io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Format format,
+            String code, String field, int attemptedQuantity, int limit) throws Exception {
+        var deckId = UUID.randomUUID();
+        var cardId = UUID.randomUUID();
+        var commanderId = UUID.randomUUID();
+        var deck = new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Deck(42L, "Saved", format);
+        var existing = new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckCard(cardId, 1,
+                io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.MAINBOARD);
+        deck.addCard(existing);
+        if (format == io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Format.COMMANDER)
+            deck.addCard(new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckCard(commanderId, 1,
+                    io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType.COMMANDER));
+        when(decks.findOwnedForUpdate(deckId, 42L)).thenReturn(java.util.Optional.of(deck));
+        String type = code.equals("COPY_LIMIT_EXCEEDED") ? "Creature" : "Basic Land";
+        String color = code.equals("COLOR_IDENTITY_INCOMPATIBLE") ? "R" : "U";
+        server.expect(requestTo("http://card-manager.test/cards/" + cardId + "?lang=en"))
+                .andRespond(withSuccess("""
+                        {"oracle_id":"%s","name":"<script>unsafe catalog name</script>","type_line":"%s",
+                         "color_identity":["%s"],"legalities":{"modern":"legal","commander":"legal"}}
+                        """.formatted(cardId, type, color), MediaType.APPLICATION_JSON));
+        if (code.equals("COLOR_IDENTITY_INCOMPATIBLE"))
+            server.expect(requestTo("http://card-manager.test/cards/" + commanderId + "?lang=en"))
+                    .andRespond(withSuccess("""
+                            {"oracle_id":"%s","name":"Commander","type_line":"Legendary Creature",
+                             "oracle_text":"","color_identity":["U"],"legalities":{"commander":"legal"}}
+                            """.formatted(commanderId), MediaType.APPLICATION_JSON));
+        String detail = switch (code) {
+            case "COLOR_IDENTITY_INCOMPATIBLE" ->
+                    "This card's color identity is incompatible with the color identity of the deck's commanders.";
+            case "COMMANDER_SIZE_LIMIT_EXCEEDED" ->
+                    "Commander decks cannot exceed 100 cards, including commanders.";
+            default -> "Copy limit exceeded for this card (maximum: " + limit + ").";
+        };
+        User user = new User(); user.setId(42L);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/decks/{id}/cards", deckId)
+                        .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"oracleId":"%s","boardType":"MAINBOARD","quantity":%d}
+                                """.formatted(cardId, attemptedQuantity)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value(detail))
+                .andExpect(jsonPath("$.code").value(code))
+                .andExpect(jsonPath("$.field").value(field))
+                .andExpect(jsonPath("$.oracleIds[0]").value(cardId.toString()));
+        org.assertj.core.api.Assertions.assertThat(existing.getQuantity()).isEqualTo(1);
+        verify(decks, never()).saveAndFlush(any());
+        server.verify();
+    }
+
 }

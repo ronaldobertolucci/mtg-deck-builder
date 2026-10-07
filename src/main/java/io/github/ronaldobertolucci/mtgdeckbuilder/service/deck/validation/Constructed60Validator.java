@@ -2,9 +2,12 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.validation;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardRuleOverrideService;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class Constructed60Validator implements FormatValidatorStrategy {
@@ -42,7 +45,9 @@ public class Constructed60Validator implements FormatValidatorStrategy {
                 .mapToLong(DeckCard::getQuantity).sum() + newCard.getQuantity();
         int limit = CardLegalityRules.enforce(cardDetails, deck.getFormat(), overrides.getMaxCopies(cardDetails));
         if (limit != Integer.MAX_VALUE && copies > limit) {
-            throw new RuleViolationException("Copy limit exceeded for " + cardDetails.name() + ": " + limit);
+            throw new RuleViolationException(RuleErrorCode.COPY_LIMIT_EXCEEDED,
+                    "Copy limit exceeded for this card (maximum: " + limit + ").",
+                    "quantity", List.of(newCard.getOracleId()));
         }
         long sideboard = deck.getCards().stream()
                 .filter(card -> card.getBoardType() == BoardType.SIDEBOARD || card.getBoardType() == BoardType.COMPANION)
