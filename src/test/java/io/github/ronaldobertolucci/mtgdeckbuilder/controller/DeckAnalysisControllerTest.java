@@ -62,4 +62,22 @@ class DeckAnalysisControllerTest {
         mvc.perform(post("/decks/{id}/analysis",deckId)).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
+    @Test void serializesStructuredReasons() throws Exception {
+        var deck = new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Deck(42L, "Test", Format.MODERN);
+        deck.recordStructuredAnalysis(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.IRREGULAR,
+                java.time.Instant.parse("2026-09-15T12:00:00Z"), List.of(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason("MAINBOARD_SIZE_BELOW_MINIMUM",
+                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason.Severity.VIOLATION,
+                        "Constructed mainboard requires at least 60 cards.", java.util.Map.of("actual", 0, "minimum", 60))));
+        when(service.analyze(42L, deckId)).thenReturn(DeckResponse.from(deck));
+        mvc.perform(post("/decks/{id}/analysis", deckId).with(owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisReasons[0].code").value("MAINBOARD_SIZE_BELOW_MINIMUM"))
+                .andExpect(jsonPath("$.analysisReasons[0].severity").value("VIOLATION"))
+                .andExpect(jsonPath("$.analysisReasons[0].message").value("Constructed mainboard requires at least 60 cards."))
+                .andExpect(jsonPath("$.analysisReasons[0].parameters.actual").value(0))
+                .andExpect(jsonPath("$.analysisReasons[0].parameters.minimum").value(60))
+                .andExpect(jsonPath("$.analysisMessages[0]").value("Constructed mainboard requires at least 60 cards."));
+    }
+
 }

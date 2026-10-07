@@ -75,6 +75,47 @@ class DeckRepositoryTest {
     }
 
     @Test
+    void structuredReasonSurvivesReloadAndInvalidation() {
+        Deck deck = deckWithCard();
+        String id = deck.getCards().getFirst().getOracleId().toString();
+        deck.recordStructuredAnalysis(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.IRREGULAR,
+                java.time.Instant.parse("2026-09-15T12:00:00Z"), java.util.List.of(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason("COPY_LIMIT_EXCEEDED",
+                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason.Severity.VIOLATION,
+                        "Copy limit exceeded", java.util.Map.of("oracleId", id, "actual", 5, "maximum", 4,
+                        "oracleIds", java.util.List.of(id)))));
+        deckRepository.saveAndFlush(deck);
+        entityManager.clear();
+        Deck reloaded = deckRepository.findById(deck.getId()).orElseThrow();
+        assertThat(reloaded.getAnalysisReasons()).singleElement().satisfies(reason -> {
+            assertThat(reason.getCode()).isEqualTo("COPY_LIMIT_EXCEEDED");
+            assertThat(reason.getSeverity()).isEqualTo(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason.Severity.VIOLATION);
+            assertThat(reason.getParameters()).containsEntry("oracleId", id).containsEntry("actual", 5)
+                    .containsEntry("maximum", 4).containsEntry("oracleIds", java.util.List.of(id));
+        });
+        assertThat(reloaded.getAnalysisMessages()).containsExactly("Copy limit exceeded");
+        reloaded.invalidateAnalysis();
+        deckRepository.saveAndFlush(reloaded);
+        entityManager.clear();
+        assertThat(deckRepository.findById(deck.getId()).orElseThrow().getAnalysisReasons()).isEmpty();
+    }
+
+    @Test
+    void historicalMessageUsesExplicitLegacyFallback() {
+        Deck deck = deckRepository.saveAndFlush(deckWithCard());
+        jdbcTemplate.update("INSERT INTO deck_analysis_messages (deck_id, position, message) VALUES (?, 0, ?)",
+                deck.getId(), "Historical message");
+        entityManager.clear();
+        Deck reloaded = deckRepository.findById(deck.getId()).orElseThrow();
+        assertThat(reloaded.getAnalysisReasons()).singleElement().satisfies(reason -> {
+            assertThat(reason.getCode()).isEqualTo("LEGACY_MESSAGE");
+            assertThat(reason.getSeverity()).isEqualTo(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason.Severity.LEGACY);
+            assertThat(reason.getParameters()).isEmpty();
+            assertThat(reason.getMessage()).isEqualTo("Historical message");
+        });
+    }
+
+    @Test
     void saveDeckPersistsCardsInCascade() {
         Deck deck = deckWithCard();
         DeckCard card = deck.getCards().getFirst();

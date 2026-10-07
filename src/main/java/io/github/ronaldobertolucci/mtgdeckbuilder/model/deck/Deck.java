@@ -55,23 +55,32 @@ public class Deck {
     @ElementCollection
     @CollectionTable(name = "deck_analysis_messages", joinColumns = @JoinColumn(name = "deck_id"))
     @OrderColumn(name = "position")
-    @Column(name = "message", nullable = false, length = 2000)
     @Getter(AccessLevel.NONE)
-    private List<String> analysisMessages = new ArrayList<>();
+    private List<AnalysisReason> analysisReasons = new ArrayList<>();
 
-    public List<String> getAnalysisMessages() { return List.copyOf(analysisMessages); }
+    public List<String> getAnalysisMessages() {
+        return analysisReasons.stream().map(AnalysisReason::getMessage).toList();
+    }
+
+    public List<AnalysisReason> getAnalysisReasons() { return List.copyOf(analysisReasons); }
 
     public void recordAnalysis(DeckStatus status, Instant at, List<String> messages) {
+        var severity = AnalysisReason.Severity.LEGACY;
+        recordStructuredAnalysis(status, at, messages.stream()
+                .map(message -> new AnalysisReason("LEGACY_MESSAGE", severity, message, java.util.Map.of())).toList());
+    }
+
+    public void recordStructuredAnalysis(DeckStatus status, Instant at, List<AnalysisReason> reasons) {
         this.status = Objects.requireNonNull(status);
         this.analyzedAt = Objects.requireNonNull(at);
-        this.analysisMessages.clear();
-        this.analysisMessages.addAll(messages);
+        this.analysisReasons.clear();
+        this.analysisReasons.addAll(reasons);
     }
 
     public void invalidateAnalysis() {
         status = DeckStatus.UNDEFINED;
         analyzedAt = null;
-        analysisMessages.clear();
+        analysisReasons.clear();
     }
 
     @OneToMany(mappedBy = "deck", cascade = CascadeType.ALL, orphanRemoval = true)

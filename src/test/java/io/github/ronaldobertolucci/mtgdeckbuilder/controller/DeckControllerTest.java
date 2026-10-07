@@ -107,6 +107,22 @@ class DeckControllerTest {
         verifyNoInteractions(service);
     }
 
+    @Test void getsSavedStructuredAnalysis() throws Exception {
+        var deck = new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Deck(42L, "Modern", Format.MODERN);
+        deck.recordStructuredAnalysis(io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED,
+                java.time.Instant.parse("2026-09-15T12:00:00Z"), List.of(
+                new io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason("CARD_METADATA_UNAVAILABLE",
+                        io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.AnalysisReason.Severity.UNCERTAINTY,
+                        "Current card metadata unavailable: " + oracleId, java.util.Map.of("oracleId", oracleId.toString()))));
+        when(service.get(42L, deckId)).thenReturn(DeckResponse.from(deck));
+        mvc.perform(get("/decks/{id}", deckId).with(owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisReasons[0].code").value("CARD_METADATA_UNAVAILABLE"))
+                .andExpect(jsonPath("$.analysisReasons[0].severity").value("UNCERTAINTY"))
+                .andExpect(jsonPath("$.analysisReasons[0].parameters.oracleId").value(oracleId.toString()))
+                .andExpect(jsonPath("$.analysisMessages[0]").value("Current card metadata unavailable: " + oracleId));
+    }
+
     @Test void getsIndividualDeck() throws Exception {
         when(service.get(42L, deckId)).thenReturn(response());
         mvc.perform(get("/decks/{id}", deckId).with(owner())).andExpect(status().isOk())

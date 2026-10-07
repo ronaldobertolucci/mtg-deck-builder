@@ -36,6 +36,12 @@ class DeckAnalysisServiceTest {
         assertThat(result.analyzedAt()).isNotNull();
         assertThat(deck.getStatus()).isEqualTo(status);
         if (status != DeckStatus.REGULAR) assertThat(result.analysisMessages()).isNotEmpty();
+        assertThat(result.analysisReasons()).extracting(AnalysisReason::getMessage)
+                .containsExactlyElementsOf(result.analysisMessages());
+        assertThat(result.analysisReasons()).allSatisfy(reason -> {
+            assertThat(reason.getCode()).isNotBlank().isNotEqualTo("LEGACY_MESSAGE");
+            assertThat(reason.getSeverity()).isIn(AnalysisReason.Severity.VIOLATION, AnalysisReason.Severity.UNCERTAINTY);
+        });
         verify(integration, never()).fetchCardDetails(any());
     }
     @ParameterizedTest @EnumSource(value=Format.class, names={"STANDARD","MODERN","PIONEER","LEGACY"})
@@ -161,6 +167,37 @@ class DeckAnalysisServiceTest {
                 row.getOracleId(), "Front // Back", "Legendary Creature", null, List.of("U"),
                 Map.of("commander", CardLegality.LEGAL), List.of(), null, null, null, List.of(), "modal_dfc", List.of()));
         expect(DeckStatus.UNDEFINED);
+    }
+
+    @Test void structuredReasonsRetainParametersAndSeverityOrder() {
+        UUID id = basic(59, BoardType.MAINBOARD);
+        when(integration.refreshCardDetails(id)).thenThrow(new CardManagerUnavailableException("offline", null));
+        var result = service.analyze(42L, deckId);
+        assertThat(result.analysisReasons()).extracting(AnalysisReason::getCode)
+                .containsExactly("MAINBOARD_SIZE_BELOW_MINIMUM", "CARD_METADATA_UNAVAILABLE");
+        assertThat(result.analysisReasons().getFirst().getSeverity()).isEqualTo(AnalysisReason.Severity.VIOLATION);
+        assertThat(result.analysisReasons().getFirst().getParameters()).containsExactlyInAnyOrderEntriesOf(
+                Map.of("actual", 59L, "minimum", 60));
+        assertThat(result.analysisReasons().get(1).getSeverity()).isEqualTo(AnalysisReason.Severity.UNCERTAINTY);
+        assertThat(result.analysisReasons().get(1).getParameters()).containsEntry("oracleId", id.toString());
+        basic(1, BoardType.MAINBOARD);
+        doReturn(new CardDetailsResponse(id, "Island", "Basic Land", "",
+                List.of(), Map.of("modern", CardLegality.LEGAL), List.of())).when(integration).refreshCardDetails(id);
+        var regular = service.analyze(42L, deckId);
+        assertThat(regular.analysisReasons()).isEmpty();
+        assertThat(regular.analysisMessages()).isEmpty();
+    }
+
+    @Test void structuredBannedReasonIncludesCardAndFormat() {
+        basic(60, BoardType.MAINBOARD);
+        UUID id = add(1, BoardType.MAINBOARD, "Creature", "", CardLegality.BANNED, List.of(), List.of());
+        var result = service.analyze(42L, deckId);
+        assertThat(result.analysisReasons()).singleElement().satisfies(reason -> {
+            assertThat(reason.getCode()).isEqualTo("CARD_BANNED");
+            assertThat(reason.getParameters()).containsEntry("oracleId", id.toString())
+                    .containsEntry("format", "MODERN").containsEntry("legality", "BANNED")
+                    .containsEntry("cardName", "Card");
+        });
     }
 
 }

@@ -729,6 +729,53 @@ companion recebem uma explicação sobre a ausência de validação de suas cond
 específicas. Falhas de consulta durante a análise são registradas como incerteza;
 não são tratadas como prova de que a carta foi banida.
 
+A resposta também inclui `analysisReasons`, uma lista ordenada de motivos estruturados.
+Cada item contém `code` (código estável), `severity` (`VIOLATION` ou `UNCERTAINTY`),
+`message` (texto em inglês) e `parameters` (objeto JSON). `analysisMessages` continua
+presente e contém exatamente os textos de `analysisReasons`, na mesma ordem, com
+violações antes das incertezas. Ambos os campos são persistidos como uma única fonte
+de dados e ficam vazios quando a composição invalida a análise ou uma nova análise
+não encontra motivos. O detalhe do deck retorna os mesmos motivos salvos.
+
+Exemplo para um mainboard de 59 cartas:
+
+```json
+{
+  "code": "MAINBOARD_SIZE_BELOW_MINIMUM",
+  "severity": "VIOLATION",
+  "message": "Constructed mainboard requires at least 60 cards.",
+  "parameters": { "actual": 59, "minimum": 60 }
+}
+```
+
+O frontend pode usar códigos e parâmetros para apresentação localizada sem comparar
+frases. UUIDs são strings, quantidades são números e coleções são arrays JSON.
+
+| Código | Parâmetros |
+| --- | --- |
+| `MAINBOARD_SIZE_BELOW_MINIMUM` | `actual`, `minimum` |
+| `COMMANDER_DECK_SIZE_INVALID` | `actual`, `required` |
+| `SIDEBOARD_SIZE_LIMIT_EXCEEDED` | `actual`, `maximum` |
+| `BOARD_TYPE_NOT_SUPPORTED` | `boardType`, `format` |
+| `INVALID_COMMANDER_SELECTION` | `oracleIds`; `quantities` quando a seleção/quantidade é inválida |
+| `INVALID_COMPANION_SELECTION` | `oracleIds`, `quantities` |
+| `INVALID_CARD_QUANTITY` | `oracleId`, `actual` |
+| `COPY_LIMIT_EXCEEDED` | `oracleId`, `actual`, `maximum` |
+| `CARD_BANNED`, `CARD_NOT_LEGAL` | `oracleId`, `cardName`, `format`, `legality` |
+| `CARD_METADATA_UNAVAILABLE`, `CARD_METADATA_INCONSISTENT` | `oracleId` |
+| `CARD_LEGALITY_UNKNOWN` | `oracleId`, `format` |
+| `COLOR_IDENTITY_UNKNOWN` | `oracleId` |
+| `COLOR_IDENTITY_INCOMPATIBLE` | `oracleId`, `colorIdentity`, `commanderColorIdentity` |
+| `COMPANION_NOT_ELIGIBLE` | `oracleId` |
+| `COMPANION_REQUIREMENTS_NOT_EVALUATED` | `oracleIds` |
+| `COMMANDER_NOT_ELIGIBLE`, `INCOMPATIBLE_COMMANDER_PAIR`, `COMMANDER_DATA_INCOMPLETE` | `oracleIds` |
+| `LEGACY_MESSAGE` | Objeto vazio; `severity: LEGACY` |
+
+Análises anteriores à migração V12 mantêm os textos originais com `LEGACY_MESSAGE`
+e `severity: LEGACY`: não se deduz código ou severidade individual pelo texto.
+Uma nova análise substitui esses motivos pelos códigos atuais. Clientes devem ter
+um fallback para códigos desconhecidos, exibindo `message`.
+
 A análise é uma fotografia dos dados disponíveis naquele momento. Alterações de
 legalidade no catálogo exigem uma nova chamada; não existe reanálise agendada.
 O status REGULAR não representa certificação oficial de torneio nem implementação
