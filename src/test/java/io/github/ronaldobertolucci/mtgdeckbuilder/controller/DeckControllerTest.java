@@ -50,6 +50,32 @@ class DeckControllerTest {
         return new DeckResponse(deckId, "Modern", Format.MODERN, null, null, List.of(), io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null, List.of());
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "SIDEBOARD_SIZE_LIMIT_EXCEEDED,quantity", "INVALID_COMPANION_QUANTITY,quantity",
+            "COMPANION_NOT_ELIGIBLE,oracleId", "COMPANION_LIMIT_EXCEEDED,boardType",
+            "INVALID_COMMANDER_SELECTION,commanderOracleIds", "LAST_COMMANDER_REQUIRED,quantity",
+            "BOARD_TYPE_NOT_SUPPORTED,boardType", "CARD_NOT_ACCESSORY,oracleId"
+    })
+    void cardRuleErrorsSerializeStructuredProblemDetails(
+            io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode code, String field) throws Exception {
+        var otherId = UUID.randomUUID();
+        when(service.upsertCard(eq(42L), eq(deckId), any())).thenThrow(new RuleViolationException(
+                code, "Rule rejected", field, List.of(oracleId, otherId)));
+        mvc.perform(put("/decks/{deckId}/cards", deckId).with(owner()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"oracleId":"%s","boardType":"MAINBOARD","quantity":1}
+                                """.formatted(oracleId)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.detail").value("Rule rejected"))
+                .andExpect(jsonPath("$.code").value(code.name()))
+                .andExpect(jsonPath("$.field").value(field))
+                .andExpect(jsonPath("$.oracleIds[0]").value(oracleId.toString()))
+                .andExpect(jsonPath("$.oracleIds[1]").value(otherId.toString()));
+    }
+
     @Test void listsPaginatedSummariesForOwner() throws Exception {
         var summary = new DeckSummaryResponse(deckId, "Modern", Format.MODERN, null, null,
                 io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.DeckStatus.UNDEFINED, null);

@@ -30,11 +30,13 @@ public class Constructed60Validator implements FormatValidatorStrategy {
             throw new RuleViolationException("Unsupported constructed format: " + deck.getFormat());
         }
         if (newCard.getBoardType() == BoardType.COMMANDER) {
-            throw new RuleViolationException("Constructed decks cannot have a commander");
+            throw new RuleViolationException(RuleErrorCode.BOARD_TYPE_NOT_SUPPORTED,
+                    "Constructed decks cannot have a commander", "boardType", List.of(newCard.getOracleId()));
         }
         if (newCard.getBoardType() == BoardType.TOKENS) {
             if (!io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.ResolvedCardResponse.isAccessory(cardDetails.layout(), cardDetails.typeLine()))
-                throw new RuleViolationException("Only accessories can be added to TOKENS");
+                throw new RuleViolationException(RuleErrorCode.CARD_NOT_ACCESSORY,
+                        "Only accessories can be added to TOKENS", "oracleId", List.of(newCard.getOracleId()));
             return;
         }
         CompanionRules.validateAddition(deck, newCard, cardDetails);
@@ -56,7 +58,8 @@ public class Constructed60Validator implements FormatValidatorStrategy {
             sideboard += newCard.getQuantity();
         }
         if (sideboard > 15) {
-            throw new RuleViolationException("Sideboard and companion together cannot exceed 15 cards");
+            throw new RuleViolationException(RuleErrorCode.SIDEBOARD_SIZE_LIMIT_EXCEEDED,
+                    "Sideboard and companion together cannot exceed 15 cards", "quantity", List.of(newCard.getOracleId()));
         }
     }
 }

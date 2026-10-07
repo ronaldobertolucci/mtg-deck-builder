@@ -35,11 +35,13 @@ public class CommanderValidator implements FormatValidatorStrategy {
             throw new RuleViolationException("Unsupported commander format: " + deck.getFormat());
         }
         if (newCard.getBoardType() == BoardType.SIDEBOARD) {
-            throw new RuleViolationException("Commander decks do not support a sideboard");
+            throw new RuleViolationException(RuleErrorCode.BOARD_TYPE_NOT_SUPPORTED,
+                    "Commander decks do not support a sideboard", "boardType", List.of(newCard.getOracleId()));
         }
         if (newCard.getBoardType() == BoardType.TOKENS) {
             if (!io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.ResolvedCardResponse.isAccessory(cardDetails.layout(), cardDetails.typeLine()))
-                throw new RuleViolationException("Only accessories can be added to TOKENS");
+                throw new RuleViolationException(RuleErrorCode.CARD_NOT_ACCESSORY,
+                        "Only accessories can be added to TOKENS", "oracleId", List.of(newCard.getOracleId()));
             return;
         }
         CompanionRules.validateAddition(deck, newCard, cardDetails);
@@ -49,7 +51,13 @@ public class CommanderValidator implements FormatValidatorStrategy {
                 + (newCard.getBoardType() == BoardType.COMMANDER ? newCard.getQuantity() : 0);
         if (commanders < 1 || commanders > 2 || (newCard.getBoardType() == BoardType.COMMANDER && newCard.getQuantity() != 1)
                 || deck.getCards().stream().anyMatch(card -> card.getBoardType() == BoardType.COMMANDER && card.getQuantity() != 1)) {
-            throw new RuleViolationException("Commander decks require one or two distinct commanders, with one copy each");
+            var commanderIds = new ArrayList<>(deck.getCards().stream()
+                    .filter(card -> card.getBoardType() == BoardType.COMMANDER).map(DeckCard::getOracleId).toList());
+            if (newCard.getBoardType() == BoardType.COMMANDER) commanderIds.add(newCard.getOracleId());
+            throw new RuleViolationException(RuleErrorCode.INVALID_COMMANDER_SELECTION,
+                    "Commander decks require one or two distinct commanders, with one copy each",
+                    newCard.getBoardType() == BoardType.COMMANDER && newCard.getQuantity() != 1
+                            ? "quantity" : "commanderOracleIds", commanderIds);
         }
         if (mainboard + commanders > 100) {
             throw new RuleViolationException(RuleErrorCode.COMMANDER_SIZE_LIMIT_EXCEEDED,

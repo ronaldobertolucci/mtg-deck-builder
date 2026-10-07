@@ -767,15 +767,16 @@ com `Content-Type: application/problem+json`:
 | 422 Unprocessable Entity | Violação de regra ao criar ou editar o deck. |
 | 503 Service Unavailable | Card Manager indisponível durante criação ou edição. |
 
-As rejeições relacionadas a comandantes expõem códigos estáveis. `detail` continua
+As rejeições de regras listadas abaixo expõem códigos estáveis. `detail` continua
 sendo uma mensagem técnica; o frontend pode traduzir `code` e destacar `oracleIds`.
-`field` é incluído quando há um campo aplicável (`commanderOracleIds` ou `oracleId`).
+`field` é incluído quando há um campo aplicável (`commanderOracleIds`, `oracleId`,
+`quantity` ou `boardType`).
 Os metadados são extensões opcionais: outras regras existentes podem retornar apenas
 o Problem Details básico.
 
 | Código | Significado |
 | --- | --- |
-| `INVALID_COMMANDER_SELECTION` | Seleção ausente, duplicada, com IDs nulos, excessiva ou incompatível com o formato. |
+| `INVALID_COMMANDER_SELECTION` | Seleção ausente, duplicada, com IDs nulos, excessiva, com quantidade diferente de 1 por comandante ou incompatível com o formato. |
 | `COMMANDER_NOT_ELIGIBLE` | Carta não pode ser o comandante selecionado. |
 | `INCOMPATIBLE_COMMANDER_PAIR` | Cartas elegíveis, mas sem combinação compatível. |
 | `CARD_BANNED` | Carta banida no formato. |
@@ -786,13 +787,32 @@ o Problem Details básico.
 | `COPY_LIMIT_EXCEEDED` | Quantidade excede o limite de cópias da carta no formato, somando as zonas aplicáveis. |
 | `COLOR_IDENTITY_INCOMPATIBLE` | Identidade de cor da carta incompatível com a identidade dos comandantes. |
 | `COMMANDER_SIZE_LIMIT_EXCEEDED` | Mainboard e comandantes ultrapassam o total de 100 cartas. |
+| `SIDEBOARD_SIZE_LIMIT_EXCEEDED` | Sideboard e companion ultrapassam juntos 15 cartas em formato construído. |
+| `INVALID_COMPANION_QUANTITY` | Quantidade do companion diferente de 1. |
+| `COMPANION_NOT_ELIGIBLE` | Carta sem a habilidade Companion na zona companion. |
+| `COMPANION_LIMIT_EXCEEDED` | Mais de um companion no deck. |
+| `LAST_COMMANDER_REQUIRED` | Remoção do último comandante enquanto existem cartas no mainboard ou companion. |
+| `BOARD_TYPE_NOT_SUPPORTED` | Sideboard em Commander ou comandante em formato construído durante inclusão/importação de cartas. |
+| `CARD_NOT_ACCESSORY` | Carta não classificada como acessório na zona TOKENS. |
 
-Esses três últimos motivos retornam `detail` seguro em inglês, sem interpolar
+Limites de cópias/tamanho, identidade incompatível e rejeições de zona/companion
+retornam `detail` seguro em inglês, sem interpolar
 nomes ou textos recebidos do catálogo. Limites de cópias e tamanho indicam
 `field: "quantity"`; identidade incompatível indica `field: "oracleId"`.
 `oracleIds` identifica a carta afetada. Uma inclusão ou atualização rejeitada
 preserva as quantidades salvas e a análise anterior do deck. O frontend deve
 manter a quantidade confirmada pelo servidor ao receber 422.
+
+O limite conjunto de sideboard/companion, a quantidade inválida de companion e a
+remoção do último comandante indicam `field: "quantity"` e o oracle ID da carta
+da operação. Companion inelegível e carta não acessória indicam `field: "oracleId"`.
+Zona incompatível indica `field: "boardType"`. Excesso de companions também indica
+`boardType`, com os IDs do companion existente e do candidato em `oracleIds`.
+Seleção inválida de comandantes durante edição indica `quantity` quando a quantidade
+do candidato é diferente de 1; nos demais casos indica `commanderOracleIds`, com os
+IDs dos comandantes selecionados. Se não houver comandante, essa lista vazia é omitida.
+As mesmas regras e códigos se aplicam à importação; para um conjunto de companions
+já inválido, os IDs indicam as cartas que violam o limite ou a quantidade.
 
 Na validação de entrada (400), cada item de `errors` contém `field`, `message` e
 `code`: `INVALID_COMMANDER_SELECTION` para `commanderOracleIds` e seus elementos;

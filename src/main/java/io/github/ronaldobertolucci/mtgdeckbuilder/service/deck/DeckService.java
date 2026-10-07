@@ -116,7 +116,9 @@ public class DeckService {
                     if (remaining.getCards().stream().noneMatch(card -> card.getBoardType() == BoardType.COMMANDER)
                             && remaining.getCards().stream().anyMatch(card -> card.getBoardType() == BoardType.MAINBOARD
                                     || card.getBoardType() == BoardType.COMPANION)) {
-                        throw new RuleViolationException("Remove mainboard and companion cards before removing the last commander");
+                        throw new RuleViolationException(RuleErrorCode.LAST_COMMANDER_REQUIRED,
+                                "Remove mainboard and companion cards before removing the last commander",
+                                "quantity", List.of(existing.getOracleId()));
                     }
                     validateCommanders(remaining);
                 }
