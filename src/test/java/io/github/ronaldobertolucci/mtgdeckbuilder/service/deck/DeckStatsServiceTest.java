@@ -1,6 +1,7 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.DeckStatsCardResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
@@ -47,7 +48,10 @@ class DeckStatsServiceTest {
         deck.addCard(new DeckCard(side, 15, BoardType.SIDEBOARD));
         deck.addCard(new DeckCard(companion, 1, BoardType.COMPANION));
         add("Creature", 3.0, "{W}", "rare", 1, BoardType.COMMANDER);
-        assertThat(stats().totalCards()).isEqualTo(1);
+        var stats = stats();
+        assertThat(stats.totalCards()).isEqualTo(1);
+        assertThat(stats.cardsByType().values().stream().flatMap(List::stream))
+                .extracting(DeckStatsCardResponse::boardType).containsExactly(BoardType.COMMANDER);
         verify(integration, never()).fetchCardDetails(token);
         verify(integration, never()).fetchCardDetails(side);
         verify(integration, never()).fetchCardDetails(companion);
@@ -68,11 +72,14 @@ class DeckStatsServiceTest {
             "Planeswalker Creature,Creature", "Artifact Planeswalker,Planeswalker", "Instant Sorcery,Instant",
             "Artifact Sorcery,Sorcery", "Artifact Enchantment,Artifact", "Enchantment,Enchantment", "Battle,Other"})
     void usesStrictTypeHierarchyAndCountsEveryCopy(String type, String expected) {
-        add(type, 1.0, "", "UnCoMmOn", 3, BoardType.MAINBOARD);
+        UUID id = add(type, 1.0, "", "UnCoMmOn", 3, BoardType.MAINBOARD);
         var stats = stats();
         assertThat(stats.typeDistribution()).containsEntry(expected, 3);
         assertThat(stats.typeDistribution().values().stream().mapToInt(Integer::intValue).sum()).isEqualTo(3);
         assertThat(stats.rarityDistribution()).containsEntry("UNCOMMON", 3);
+        assertThat(stats.cardsByType().get(expected))
+                .containsExactly(new DeckStatsCardResponse(id, BoardType.MAINBOARD, 3));
+        assertThat(stats.cardsByType().values().stream().flatMap(List::stream)).hasSize(1);
     }
 
     @Test void countsNormalHybridAndPhyrexianSymbolsTogether() {
@@ -106,6 +113,8 @@ class DeckStatsServiceTest {
         assertThat(stats.averageCmc()).isZero();
         assertThat(stats.manaCurve()).containsOnlyKeys("0", "1", "2", "3", "4", "5", "6", "7+");
         assertThat(stats.typeDistribution()).containsOnlyKeys("Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Other");
+        assertThat(stats.cardsByType()).containsOnlyKeys(stats.typeDistribution().keySet().toArray(String[]::new));
+        stats.cardsByType().values().forEach(cards -> assertThat(cards).isEmpty());
         assertThat(stats.colorPips()).containsOnlyKeys("WHITE", "BLUE", "BLACK", "RED", "GREEN", "COLORLESS");
         assertThat(stats.rarityDistribution()).containsOnlyKeys("COMMON", "UNCOMMON", "RARE", "MYTHIC");
         for (var counts : List.of(stats.manaCurve(), stats.typeDistribution(), stats.colorPips(), stats.rarityDistribution())) {
@@ -124,12 +133,40 @@ class DeckStatsServiceTest {
     }
 
     @Test void toleratesMissingOptionalMetadata() {
-        add(null, null, null, null, 1, BoardType.MAINBOARD);
+        UUID id = add(null, null, null, null, 1, BoardType.MAINBOARD);
         var stats = stats();
         assertThat(stats.typeDistribution()).containsEntry("Other", 1);
         assertThat(stats.manaCurve()).containsEntry("0", 1);
         assertThat(stats.averageCmc()).isZero();
         assertThat(stats.colorPips().values()).containsOnly(0);
+        assertThat(stats.cardsByType().get("Other"))
+                .containsExactly(new DeckStatsCardResponse(id, BoardType.MAINBOARD, 1));
+    }
+
+    @Test void groupsCardsWithQuantitiesMatchingDistributionAndPreservesSeparateBoards() {
+        UUID creature = add("Artifact Creature", 2.0, "{U}", "rare", 4, BoardType.MAINBOARD);
+        deck.addCard(new DeckCard(creature, 1, BoardType.COMMANDER));
+        UUID land = add("Artifact Land Creature", 0.0, "", "common", 2, BoardType.MAINBOARD);
+        UUID other = add("Battle", 3.0, "{R}", "uncommon", 1, BoardType.MAINBOARD);
+
+        var stats = stats();
+
+        assertThat(stats.cardsByType().get("Creature")).containsExactlyInAnyOrder(
+                new DeckStatsCardResponse(creature, BoardType.MAINBOARD, 4),
+                new DeckStatsCardResponse(creature, BoardType.COMMANDER, 1));
+        assertThat(stats.cardsByType().get("Land"))
+                .containsExactly(new DeckStatsCardResponse(land, BoardType.MAINBOARD, 2));
+        assertThat(stats.cardsByType().get("Other"))
+                .containsExactly(new DeckStatsCardResponse(other, BoardType.MAINBOARD, 1));
+        assertThat(stats.cardsByType().keySet()).containsExactlyElementsOf(stats.typeDistribution().keySet());
+        stats.typeDistribution().forEach((type, count) -> assertThat(stats.cardsByType().get(type).stream()
+                .mapToInt(DeckStatsCardResponse::quantity).sum()).isEqualTo(count));
+        assertThat(stats.cardsByType().values().stream().flatMap(List::stream)
+                .mapToInt(DeckStatsCardResponse::quantity).sum()).isEqualTo(stats.totalCards());
+        verify(integration, times(2)).fetchCardDetails(creature);
+        verify(integration).fetchCardDetails(land);
+        verify(integration).fetchCardDetails(other);
+        verifyNoMoreInteractions(integration);
     }
 
     @Test void missingOrUnownedDeckFailsBeforeFetchingCards() {
@@ -143,10 +180,11 @@ class DeckStatsServiceTest {
         return service.getDeckStats(deckId, 42L);
     }
 
-    private void add(String type, Double cmc, String cost, String rarity, int quantity, BoardType board) {
+    private UUID add(String type, Double cmc, String cost, String rarity, int quantity, BoardType board) {
         UUID id = UUID.randomUUID();
         deck.addCard(new DeckCard(id, quantity, board));
         when(integration.fetchCardDetails(id)).thenReturn(new CardDetailsResponse(id, "Card", type, "",
                 List.of(), Map.of(), List.of(), cmc, cost, rarity));
+        return id;
     }
 }

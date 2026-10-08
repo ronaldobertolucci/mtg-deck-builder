@@ -69,7 +69,7 @@ class ValidationLanguageTest {
         LocaleContextHolder.setLocale(Locale.forLanguageTag("pt-BR"));
         try (var validator = new LocalValidatorFactoryBean()) {
             validator.afterPropertiesSet();
-            var controller = new DeckController(null, null, null, null);
+            var controller = new DeckController(null, null, null, null, null);
             var method = DeckController.class.getMethod("list", User.class, int.class, int.class);
             assertThat(validator.forExecutables().validateParameters(controller, method, new Object[]{null, -1, 0}))
                     .extracting(ConstraintViolation::getMessage)

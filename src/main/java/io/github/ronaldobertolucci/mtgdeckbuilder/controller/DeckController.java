@@ -3,6 +3,7 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.user.User;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckStatsService;
+import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckCompositionService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.ManaSuggestionService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckExportService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.ExportFormat;
@@ -23,12 +24,14 @@ public class DeckController {
     private final DeckExportService exportService;
     private final DeckStatsService statsService;
     private final ManaSuggestionService manaSuggestionService;
+    private final DeckCompositionService compositionService;
     public DeckController(DeckService service, DeckExportService exportService, DeckStatsService statsService,
-                          ManaSuggestionService manaSuggestionService) {
+                          ManaSuggestionService manaSuggestionService, DeckCompositionService compositionService) {
         this.service = service;
         this.exportService = exportService;
         this.statsService = statsService;
         this.manaSuggestionService = manaSuggestionService;
+        this.compositionService = compositionService;
     }
 
     @GetMapping
@@ -65,6 +68,11 @@ public class DeckController {
     @GetMapping("/{deckId}/stats")
     public DeckStatsResponse getDeckStats(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
         return statsService.getDeckStats(deckId, user.getId());
+    }
+
+    @GetMapping("/{deckId}/composition")
+    public DeckCompositionResponse getDeckComposition(@AuthenticationPrincipal User user, @PathVariable UUID deckId) {
+        return compositionService.getDeckComposition(deckId, user.getId());
     }
 
     @GetMapping("/{deckId}/print-cards")

@@ -1,6 +1,7 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.DeckStatsResponse;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.DeckStatsCardResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
@@ -8,7 +9,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardIntegrationSe
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -31,7 +34,9 @@ public class DeckStatsService {
     public DeckStatsResponse getDeckStats(UUID deckId, Long userId) {
         var deck = repository.findByIdAndUserId(deckId, userId).orElseThrow(DeckNotFoundException::new);
         var curve = zeroCounts("0", "1", "2", "3", "4", "5", "6", "7+");
-        var types = zeroCounts("Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Other");
+        var types = zeroCounts(DeckCardTypeClassifier.TYPES.toArray(String[]::new));
+        Map<String, List<DeckStatsCardResponse>> cardsByType = new LinkedHashMap<>();
+        types.keySet().forEach(type -> cardsByType.put(type, new ArrayList<>()));
         var pips = zeroCounts("WHITE", "BLUE", "BLACK", "RED", "GREEN", "COLORLESS");
         var rarities = zeroCounts("COMMON", "UNCOMMON", "RARE", "MYTHIC");
         int totalCards = 0;
@@ -43,8 +48,9 @@ public class DeckStatsService {
             var details = integration.fetchCardDetails(card.getOracleId());
             int quantity = card.getQuantity();
             totalCards += quantity;
-            String type = mainType(details.typeLine());
+            String type = DeckCardTypeClassifier.mainType(details.typeLine());
             types.merge(type, quantity, Integer::sum);
+            cardsByType.get(type).add(new DeckStatsCardResponse(card.getOracleId(), card.getBoardType(), quantity));
             if (details.rarity() != null) {
                 rarities.computeIfPresent(details.rarity().toUpperCase(Locale.ROOT), (key, count) -> count + quantity);
             }
@@ -58,7 +64,7 @@ public class DeckStatsService {
             countManaPips(details.manaCost(), quantity, pips);
         }
         double average = nonLandCards == 0 ? 0 : Math.round(totalCmc / nonLandCards * 100.0) / 100.0;
-        return new DeckStatsResponse(totalCards, average, curve, types, pips, rarities);
+        return new DeckStatsResponse(totalCards, average, curve, types, pips, rarities, cardsByType);
     }
 
     static void countManaPips(String manaCost, int quantity, Map<String, Integer> pips) {
@@ -79,15 +85,4 @@ public class DeckStatsService {
         return counts;
     }
 
-    private static String mainType(String typeLine) {
-        if (typeLine == null) return "Other";
-        if (typeLine.contains("Land")) return "Land";
-        else if (typeLine.contains("Creature")) return "Creature";
-        else if (typeLine.contains("Planeswalker")) return "Planeswalker";
-        else if (typeLine.contains("Instant")) return "Instant";
-        else if (typeLine.contains("Sorcery")) return "Sorcery";
-        else if (typeLine.contains("Artifact")) return "Artifact";
-        else if (typeLine.contains("Enchantment")) return "Enchantment";
-        else return "Other";
-    }
 }
