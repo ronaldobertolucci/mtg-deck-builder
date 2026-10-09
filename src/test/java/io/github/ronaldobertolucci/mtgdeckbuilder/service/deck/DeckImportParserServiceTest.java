@@ -28,6 +28,17 @@ class DeckImportParserServiceTest {
         assertImportError("Deck\nSideboard", RuleErrorCode.IMPORT_NO_CARDS, null);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"Tokens", "Tokens:", "  tOkEnS:  ", "TOKENS\t"})
+    void rejectsTokensHeaderWithPhysicalLineEvenWhenZoneIsEmpty(String header) {
+        assertImportError("Deck\r\n\r\n1 Island\r\n" + header,
+                RuleErrorCode.IMPORT_TOKENS_NOT_SUPPORTED, 4);
+    }
+
+    @Test void rejectsTokenOnlyImportBeforeParsingItsCards() {
+        assertImportError("Tokens\n12 Soldier", RuleErrorCode.IMPORT_TOKENS_NOT_SUPPORTED, 1);
+    }
+
     private void assertImportError(String text, RuleErrorCode code, Integer line) {
         assertThatThrownBy(() -> parser.parse(text)).isInstanceOfSatisfying(RuleViolationException.class, ex -> {
             assertThat(ex.getCode()).isEqualTo(code);

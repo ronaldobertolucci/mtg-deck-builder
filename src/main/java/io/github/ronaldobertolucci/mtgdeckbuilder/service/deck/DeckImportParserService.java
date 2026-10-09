@@ -34,7 +34,8 @@ public class DeckImportParserService {
                     case "sideboard" -> BoardType.SIDEBOARD;
                     case "commander" -> BoardType.COMMANDER;
                     case "companion" -> BoardType.COMPANION;
-                    case "tokens" -> BoardType.TOKENS;
+                    case "tokens" -> throw importError(RuleErrorCode.IMPORT_TOKENS_NOT_SUPPORTED,
+                            "The Tokens zone cannot be imported; accessories are added automatically", lineNumber);
                     default -> throw new IllegalStateException("Unknown board header");
                 };
                 continue;

@@ -2,6 +2,7 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.ImportDeckRequest;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.*;
@@ -40,6 +41,18 @@ class DeckImportTransactionTest {
 
     private CardDetailsResponse details(String name, String type, List<String> keywords) {
         return new CardDetailsResponse(UUID.randomUUID(), name, type, "", List.of(), legalities(), keywords);
+    }
+
+    @Test void tokensZoneRejectionLeavesNoDeckOrCards() {
+        assertThatThrownBy(() -> service.importDeck(42L,
+                new ImportDeckRequest("Rejected", Format.MODERN, "1 Source\nTokens\n12 Token")))
+                .isInstanceOfSatisfying(RuleViolationException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(RuleErrorCode.IMPORT_TOKENS_NOT_SUPPORTED);
+                    assertThat(ex.getLine()).isEqualTo(2);
+                });
+        assertThat(decks.count()).isZero();
+        assertThat(cards.count()).isZero();
+        verifyNoInteractions(integration);
     }
 
     @Test void resolutionFailureRollsBackImport() {

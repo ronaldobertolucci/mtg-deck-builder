@@ -60,12 +60,11 @@ public class DeckService {
 
     @Transactional
     public DeckResponse importDeck(Long userId, ImportDeckRequest request) {
-        Deck deck = repository.saveAndFlush(new Deck(userId, request.name(), request.format()));
         var cards = parser.parse(request.rawText());
+        Deck deck = repository.saveAndFlush(new Deck(userId, request.name(), request.format()));
         var detailsById = new HashMap<UUID, CardDetailsResponse>();
         for (ParsedDeckCard card : cards) {
-            var details = card.boardType() == BoardType.TOKENS
-                    ? integration.fetchAccessoryByName(card.name()) : integration.fetchCardDetailsByName(card.name());
+            var details = integration.fetchCardDetailsByName(card.name());
             detailsById.put(details.oracleId(), details);
             DeckCard existing = deck.getCards().stream()
                     .filter(value -> value.getOracleId().equals(details.oracleId())
