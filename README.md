@@ -592,13 +592,26 @@ maiúsculas/minúsculas e dois-pontos opcionais. Sem cabeçalho, a zona é MAINB
 Linhas vazias são ignoradas; linhas inválidas e quantidades não positivas são rejeitadas.
 Linhas repetidas da mesma carta e zona têm as quantidades somadas.
 
-A busca por nome usa `/cards/search?lang=en&name_exact={name}&limit=1` no Card Manager,
-o primeiro resultado e o cache exclusivo `cards_by_name`, cuja chave preserva maiúsculas e minúsculas.
-O nome deve corresponder exatamente à grafia no Card Manager (por exemplo, `Lightning Bolt`, não `lightning bolt`). As regras existentes do
-formato são aplicadas; qualquer falha desfaz toda a importação, incluindo o deck.
+A busca por nome tenta primeiro `/cards/search?lang=en&name_exact={name}&limit=1`
+no Card Manager. Se não houver resultado, consulta
+`/cards/search?lang=en&name={name}&limit=100&offset={offset}`, percorre todas as
+páginas e aceita somente cartas multiface cujo `card_faces[0].name` seja
+exatamente o nome informado. Assim, `Esika, God of the Tree`, como exportado pelo
+Arena, resolve para `Esika, God of the Tree // The Prismatic Bridge`, mantendo o
+`oracle_id` e todos os metadados da carta completa. O nome completo com ` // `
+continua aceito. Nomes parciais ou apenas do verso não são aceitos nesse fallback;
+mais de um `oracle_id` com a mesma face frontal gera erro 422 por ambiguidade.
+As buscas de acessórios mantêm `include_tokens=true` nas duas consultas.
+
+O resultado usa o cache exclusivo `cards_by_name`, cuja chave preserva maiúsculas
+e minúsculas. O nome deve corresponder exatamente à grafia no Card Manager (por
+exemplo, `Lightning Bolt`, não `lightning bolt`). Linhas com o nome frontal e o
+nome completo da mesma carta somam quantidades por `oracle_id` e zona. As regras
+existentes do formato são aplicadas; qualquer falha desfaz toda a importação,
+incluindo o deck.
 O deck permanece com status UNDEFINED até a análise.
-Na busca por nome, HTTP 404 do Card Manager é tratado como carta não encontrada e
-retorna 422 com o nome informado. Falhas de conexão e respostas 5xx retornam 503.
+Buscas válidas sem correspondência retornam 422 com o nome informado. Falhas HTTP,
+de conexão ou respostas inválidas do Card Manager retornam 503.
 
 Erros de parsing retornam `422 application/problem+json`, com `code` estável,
 `field: "rawText"` e `line` quando há uma linha específica. `line` começa em 1 e

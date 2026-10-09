@@ -54,10 +54,12 @@ class CommanderCreationFlowTest {
     @BeforeEach void clearCache() { cacheManager.getCache("cards").clear(); cacheManager.getCache("cards_by_name").clear(); }
 
     @org.junit.jupiter.api.Test
-    void importReturns422WhenCardManagerCannotFindExactCommanderName() throws Exception {
+    void importReturns422WhenCardManagerCannotFindCommanderName() throws Exception {
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Missing&limit=1"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=Missing&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         User user = new User();
         user.setId(42L);
         mvc.perform(post("/decks/import")
@@ -71,6 +73,72 @@ class CommanderCreationFlowTest {
                 .andExpect(jsonPath("$.status").value(422))
                 .andExpect(jsonPath("$.detail").value("Card not found by name: Missing"));
         verify(decks, times(1)).saveAndFlush(any());
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"jace", "esika", "invasion"})
+    void importsArenaFrontNameAndMergesCombinedNameByOracleId(String fixture) throws Exception {
+        String payload;
+        try (var stream = getClass().getResourceAsStream("/cards/" + fixture + ".json")) {
+            payload = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var card = mapper.readValue(payload, io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse.class);
+        String front = card.cardFaces().getFirst().name();
+        String encodedFront = org.springframework.web.util.UriUtils.encode(front, java.nio.charset.StandardCharsets.UTF_8);
+        String encodedFull = org.springframework.web.util.UriUtils.encode(card.name(), java.nio.charset.StandardCharsets.UTF_8);
+        when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFront + "&limit=1"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=" + encodedFront + "&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFull + "&limit=1"))
+                .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        String rawText = "Deck\n2 " + front + " (TST) 1\n1 " + card.name() + "\nSideboard\n1 " + front;
+        User user = new User(); user.setId(42L);
+        mvc.perform(post("/decks/import")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(java.util.Map.of("name", "Faces", "format", "MODERN", "rawText", rawText))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cards.length()").value(2))
+                .andExpect(jsonPath("$.cards[0].oracleId").value(card.oracleId().toString()))
+                .andExpect(jsonPath("$.cards[0].quantity").value(3))
+                .andExpect(jsonPath("$.cards[0].boardType").value("MAINBOARD"))
+                .andExpect(jsonPath("$.cards[1].oracleId").value(card.oracleId().toString()))
+                .andExpect(jsonPath("$.cards[1].quantity").value(1))
+                .andExpect(jsonPath("$.cards[1].boardType").value("SIDEBOARD"));
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"jace", "esika"})
+    void importsDoubleFacedCommanderByArenaFrontName(String fixture) throws Exception {
+        String payload;
+        try (var stream = getClass().getResourceAsStream("/cards/" + fixture + ".json")) {
+            payload = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var card = mapper.readValue(payload, io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse.class);
+        String front = card.cardFaces().getFirst().name();
+        String encoded = org.springframework.web.util.UriUtils.encode(front, java.nio.charset.StandardCharsets.UTF_8);
+        when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encoded + "&limit=1"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=" + encoded + "&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        User user = new User(); user.setId(42L);
+        mvc.perform(post("/decks/import")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(java.util.Map.of("name", "Faces", "format", "COMMANDER",
+                                "rawText", "Commander\n1 " + front + " (TST) 1"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cards.length()").value(1))
+                .andExpect(jsonPath("$.cards[0].oracleId").value(card.oracleId().toString()))
+                .andExpect(jsonPath("$.cards[0].quantity").value(1))
+                .andExpect(jsonPath("$.cards[0].boardType").value("COMMANDER"));
         server.verify();
     }
 

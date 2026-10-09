@@ -244,6 +244,9 @@ class CardIntegrationServiceTest {
                         """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=lightning%20bolt&limit=1"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        expectFrontFaceSearch("lightning bolt", 0, """
+                {"items":[{"oracle_id":"%s","name":"Lightning Bolt"}],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(ORACLE_ID), false);
 
         var card = service.fetchCardDetailsByName("Lightning Bolt");
         assertThatThrownBy(() -> service.fetchCardDetailsByName("lightning bolt"))
@@ -257,6 +260,7 @@ class CardIntegrationServiceTest {
     void emptyNameSearchThrowsRuleViolationAndIsNotCached() {
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        expectFrontFaceSearch("Missing", 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
                 .hasMessageContaining("Missing");
@@ -271,6 +275,130 @@ class CardIntegrationServiceTest {
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(CardManagerUnavailableException.class);
         assertThat(cacheManager.getCache("cards_by_name").get("Missing")).isNull();
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"jace", "esika", "invasion"})
+    void resolvesAndCachesFrontFaceFromCapturedCatalogPayload(String fixture) throws IOException {
+        String payload;
+        try (var stream = getClass().getResourceAsStream("/cards/" + fixture + ".json")) {
+            payload = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var expected = tools.jackson.databind.json.JsonMapper.builder().build().readValue(payload,
+                io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse.class);
+        String name = expected.cardFaces().getFirst().name();
+        expectExactNameMissing(name, false);
+        expectFrontFaceSearch(name, 0, "{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
+
+        var card = service.fetchCardDetailsByName(name);
+        assertThat(card).isEqualTo(expected);
+        assertThat(card.name()).isNotEqualTo(name);
+        assertThat(service.fetchCardDetailsByName(name)).isSameAs(card);
+        assertThat(cacheManager.getCache("cards_by_name").get(name).get()).isSameAs(card);
+        server.verify();
+    }
+
+    @Test
+    void combinedNameUsesExactSearchWithoutFallback() {
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Front%20%2F%2F%20Back&limit=1"))
+                .andRespond(withSuccess("{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back")
+                        + "],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        assertThat(service.fetchCardDetailsByName("Front // Back").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @Test
+    void skipsPartialAndBackFaceMatchesBeforeExactFrontFace() {
+        expectExactNameMissing("Front", false);
+        expectFrontFaceSearch("Front", 0, """
+                {"items":[%s,%s,{"name":"Frontier"},%s],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(doubleFaceJson(UUID.randomUUID(), "Frontier", "Other"),
+                doubleFaceJson(UUID.randomUUID(), "Other", "Front"),
+                doubleFaceJson(ORACLE_ID, "Front", "Back")), false);
+        assertThat(service.fetchCardDetailsByName("Front").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"front", "Fron", "Back"})
+    void rejectsWrongCasePartialAndBackFaceNames(String name) {
+        expectExactNameMissing(name, false);
+        expectFrontFaceSearch(name, 0, "{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back")
+                + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
+        assertThatThrownBy(() -> service.fetchCardDetailsByName(name))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessage("Card not found by name: " + name);
+        assertThat(cacheManager.getCache("cards_by_name").get(name)).isNull();
+        server.verify();
+    }
+
+    @Test
+    void findsFrontFaceOnLaterSearchPage() {
+        expectExactNameMissing("Front", false);
+        expectFrontFaceSearch("Front", 0, "{\"items\":[{\"name\":\"Frontier\"}],\"limit\":100,\"offset\":0,\"hasNext\":true}", false);
+        expectFrontFaceSearch("Front", 1, "{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back")
+                + "],\"limit\":100,\"offset\":1,\"hasNext\":false}", false);
+        assertThat(service.fetchCardDetailsByName("Front").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @Test
+    void rejectsAmbiguousFrontFacesAcrossPagesWithoutCaching() {
+        expectExactNameMissing("Front", false);
+        expectFrontFaceSearch("Front", 0, "{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back")
+                + "],\"limit\":100,\"offset\":0,\"hasNext\":true}", false);
+        expectFrontFaceSearch("Front", 1, "{\"items\":[" + doubleFaceJson(UUID.randomUUID(), "Front", "Other")
+                + "],\"limit\":100,\"offset\":1,\"hasNext\":false}", false);
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Front"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessage("Ambiguous front face name: Front");
+        assertThat(cacheManager.getCache("cards_by_name").get("Front")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void repeatedOracleIdAcrossPagesIsNotAmbiguous() {
+        expectExactNameMissing("Front", false);
+        String item = doubleFaceJson(ORACLE_ID, "Front", "Back");
+        expectFrontFaceSearch("Front", 0, "{\"items\":[" + item + "],\"limit\":100,\"offset\":0,\"hasNext\":true}", false);
+        expectFrontFaceSearch("Front", 1, "{\"items\":[" + item + "],\"limit\":100,\"offset\":1,\"hasNext\":false}", false);
+        assertThat(service.fetchCardDetailsByName("Front").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"null", "{}", "{\"items\":[null],\"limit\":100,\"offset\":0,\"hasNext\":false}",
+            "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":true}",
+            "{\"items\":[{\"card_faces\":[{\"name\":\"Front\"},{\"name\":\"Back\"}]}],\"limit\":100,\"offset\":0,\"hasNext\":false}"})
+    void invalidFrontFaceSearchIsUnavailableAndNotCached(String response) {
+        expectExactNameMissing("Front", false);
+        expectFrontFaceSearch("Front", 0, response, false);
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Front"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("Front")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void frontFaceSearchHttpFailureIsUnavailableAndNotCached() {
+        expectExactNameMissing("Front", false);
+        server.expect(requestTo(CARD_URL + "search?lang=en&name=Front&limit=100&offset=0"))
+                .andRespond(withServerError());
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Front"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("Front")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void frontFaceAccessorySearchPreservesIncludeTokens() {
+        expectExactNameMissing("Front", true);
+        expectFrontFaceSearch("Front", 0, "{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back").replace("transform", "double_faced_token")
+                + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", true);
+        var card = service.fetchAccessoryByName("Front");
+        assertThat(card.oracleId()).isEqualTo(ORACLE_ID);
+        assertThat(card.layout()).isEqualTo("double_faced_token");
         server.verify();
     }
 
@@ -405,6 +533,7 @@ class CardIntegrationServiceTest {
     void accessorySearchWithNoItemsIsNotFound() {
         server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1&include_tokens=true"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        expectFrontFaceSearch("Missing", 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", true);
         assertThatThrownBy(() -> service.fetchAccessoryByName("Missing"))
                 .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class);
         server.verify();
@@ -427,6 +556,27 @@ class CardIntegrationServiceTest {
         assertThat(card.rarity()).isEqualTo("rare");
         assertThat(service.fetchCardDetailsByName("Example")).isSameAs(card);
         server.verify();
+    }
+
+    private void expectExactNameMissing(String name, boolean includeTokens) {
+        String encoded = org.springframework.web.util.UriUtils.encode(name, java.nio.charset.StandardCharsets.UTF_8);
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=" + encoded + "&limit=1"
+                        + (includeTokens ? "&include_tokens=true" : "")))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+    }
+
+    private void expectFrontFaceSearch(String name, int offset, String response, boolean includeTokens) {
+        String encoded = org.springframework.web.util.UriUtils.encode(name, java.nio.charset.StandardCharsets.UTF_8);
+        server.expect(requestTo(CARD_URL + "search?lang=en&name=" + encoded + "&limit=100&offset=" + offset
+                        + (includeTokens ? "&include_tokens=true" : "")))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+    }
+
+    private String doubleFaceJson(UUID oracleId, String front, String back) {
+        return """
+                {"oracle_id":"%s","name":"%s // %s","layout":"transform",
+                 "card_faces":[{"name":"%s"},{"name":"%s"}]}
+                """.formatted(oracleId, front, back, front, back);
     }
 
     private String resolvedJson(UUID id) {
