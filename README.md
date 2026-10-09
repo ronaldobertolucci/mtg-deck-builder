@@ -542,6 +542,13 @@ Texto puro começa pelo Mainboard sem cabeçalho; Commander, Companion, Sideboar
 mantêm cabeçalhos para preservar suas zonas. Blocos são separados por uma linha
 em branco, sem quebra de linha final. As cartas são ordenadas por nome dentro de cada zona.
 
+Nos dois formatos, cartas de duas faces são exportadas somente pelo nome da face
+frontal (`card_faces[0].name`). Por exemplo, Esika gera `1 Esika, God of the Tree`,
+sem ` // The Prismatic Bridge`. Se os dados da face frontal estiverem ausentes ou
+incompletos, o serviço usa a parte anterior a `//` do nome completo. Tokens de duas
+faces seguem a mesma regra no texto puro. Cartas multiface de um só lado, como
+split, adventure e flip, mantêm o nome completo.
+
 Exige autenticação e propriedade do deck; deck inexistente ou de outro usuário
 retorna 404. O serviço resolve nomes por oracle ID no Card Manager usando o cache
 existente. Um deck vazio retorna `content` vazio; a exportação não altera nem analisa o deck.

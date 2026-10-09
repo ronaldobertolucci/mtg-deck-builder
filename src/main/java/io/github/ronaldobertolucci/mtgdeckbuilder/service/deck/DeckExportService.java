@@ -1,6 +1,7 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.*;
+import io.github.ronaldobertolucci.mtgdeckbuilder.dto.card.CardDetailsResponse;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.DeckNotFoundException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.*;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.DeckRepository;
@@ -43,10 +44,24 @@ public class DeckExportService {
             if (format == ExportFormat.ARENA && card.getBoardType() == BoardType.TOKENS) continue;
             var details = integration.fetchCardDetails(card.getOracleId());
             cardsByZone.computeIfAbsent(card.getBoardType(), zone -> new ArrayList<>())
-                    .add(new ExportableCard(details.name(), card.getQuantity()));
+                    .add(new ExportableCard(exportName(details), card.getQuantity()));
         }
         // Stable output regardless of database collection ordering.
         cardsByZone.values().forEach(cards -> cards.sort(Comparator.comparing(ExportableCard::name)));
         return new ExportDeckResponse(formatter.format(deck.getName(), cardsByZone));
+    }
+
+    private String exportName(CardDetailsResponse card) {
+        boolean doubleFaced = switch (card.layout()) {
+            case "transform", "modal_dfc", "double_faced_token", "reversible_card" -> true;
+            case null, default -> false;
+        };
+        if (!doubleFaced) return card.name();
+        if (!card.cardFaces().isEmpty()) {
+            var front = card.cardFaces().getFirst();
+            if (front != null && front.name() != null && !front.name().isBlank()) return front.name();
+        }
+        // Older or incomplete catalog responses may only provide the combined name.
+        return card.name().split("//", 2)[0].strip();
     }
 }
