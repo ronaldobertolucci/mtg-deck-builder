@@ -14,7 +14,7 @@ public class PlainTextExportFormatter implements DeckExportFormatterStrategy {
     @Override
     public String format(String deckName, Map<BoardType, List<ExportableCard>> cardsByZone) {
         List<String> blocks = new ArrayList<>();
-        for (BoardType zone : List.of(BoardType.MAINBOARD, BoardType.COMMANDER, BoardType.COMPANION, BoardType.SIDEBOARD, BoardType.TOKENS)) {
+        for (BoardType zone : List.of(BoardType.MAINBOARD, BoardType.COMMANDER, BoardType.COMPANION, BoardType.SIDEBOARD)) {
             var cards = cardsByZone.getOrDefault(zone, List.of());
             if (cards.isEmpty()) continue;
             String header = switch (zone) {
@@ -22,7 +22,7 @@ public class PlainTextExportFormatter implements DeckExportFormatterStrategy {
                 case COMPANION -> "Companion\n";
                 case MAINBOARD -> "";
                 case SIDEBOARD -> "Sideboard\n";
-                case TOKENS -> "Tokens\n";
+                case TOKENS -> throw new IllegalStateException("Tokens cannot be exported");
             };
             blocks.add(header + cards.stream().map(card -> card.quantity() + " " + card.name())
                     .collect(Collectors.joining("\n")));

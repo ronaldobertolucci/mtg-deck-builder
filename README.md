@@ -537,23 +537,24 @@ inclusive as de quantidade zero. Sem demanda líquida, retorna
 ```
 
 O parâmetro `format` é opcional e aceita `ARENA` (padrão) ou `PLAIN_TEXT`.
-Arena usa os blocos Commander, Companion, Deck e Sideboard, omitindo zonas vazias e TOKENS.
-Texto puro começa pelo Mainboard sem cabeçalho; Commander, Companion, Sideboard e Tokens
+Arena usa os blocos Commander, Companion, Deck e Sideboard.
+Texto puro começa pelo Mainboard sem cabeçalho; Commander, Companion e Sideboard
 mantêm cabeçalhos para preservar suas zonas. Blocos são separados por uma linha
 em branco, sem quebra de linha final. As cartas são ordenadas por nome dentro de cada zona.
-Para reimportar uma exportação em texto puro que contenha `Tokens`, remova esse
-bloco e suas linhas: a importação rejeita essa zona e gera os acessórios automaticamente.
+Os dois formatos omitem zonas vazias e toda a zona TOKENS, incluindo acessórios
+manuais e automáticos, sem consultar seus metadados no Card Manager. Ao reimportar
+o texto exportado, os acessórios são gerados automaticamente a partir das cartas.
 
 Nos dois formatos, cartas de duas faces são exportadas somente pelo nome da face
 frontal (`card_faces[0].name`). Por exemplo, Esika gera `1 Esika, God of the Tree`,
 sem ` // The Prismatic Bridge`. Se os dados da face frontal estiverem ausentes ou
-incompletos, o serviço usa a parte anterior a `//` do nome completo. Tokens de duas
-faces seguem a mesma regra no texto puro. Cartas multiface de um só lado, como
-split, adventure e flip, mantêm o nome completo.
+incompletos, o serviço usa a parte anterior a `//` do nome completo. Cartas
+multiface de um só lado, como split, adventure e flip, mantêm o nome completo.
 
 Exige autenticação e propriedade do deck; deck inexistente ou de outro usuário
 retorna 404. O serviço resolve nomes por oracle ID no Card Manager usando o cache
-existente. Um deck vazio retorna `content` vazio; a exportação não altera nem analisa o deck.
+existente. Um deck vazio ou contendo apenas TOKENS retorna `content` vazio;
+a exportação não altera nem analisa o deck.
 
 ### Consultar cartas para o Printing
 
@@ -730,8 +731,7 @@ Atualizar uma quantidade positiva de uma carta geradora não recalcula acessóri
 SIDEBOARD e COMPANION também geram acessórios e mantêm referências. Criação com comandantes e
 importação também geram acessórios. A importação rejeita o bloco `Tokens` para
 evitar a seleção ambígua de acessórios por nome; registros manuais são incluídos
-por `oracleId` no upsert. Texto puro continua exportando esse bloco; o formato
-Arena o omite.
+por `oracleId` no upsert. As exportações em texto puro e Arena omitem toda a zona TOKENS.
 
 Os IDs são deduplicados e resolvidos em lotes de até 100, com cache por impressão
 (limitado a 10.000 entradas, validade de 24 horas desde a resolução).

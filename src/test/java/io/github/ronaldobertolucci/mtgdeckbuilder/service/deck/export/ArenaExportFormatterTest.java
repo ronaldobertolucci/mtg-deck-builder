@@ -15,13 +15,19 @@ class ArenaExportFormatterTest {
         }
     }
 
-    @Test void formatsEveryZoneWithExactlyOneBlankLineBetweenBlocks() {
+    @Test void formatsSupportedZonesWithExactlyOneBlankLineBetweenBlocks() {
         var zones = Map.of(
                 BoardType.MAINBOARD, List.of(new ExportableCard("Brainstorm", 4), new ExportableCard("Ponder", 4)),
                 BoardType.COMMANDER, List.of(new ExportableCard("Atraxa, Praetors' Voice", 1)),
                 BoardType.COMPANION, List.of(new ExportableCard("Keruga, the Macrosage", 1)),
-                BoardType.SIDEBOARD, List.of(new ExportableCard("Force of Will", 2)));
+                BoardType.SIDEBOARD, List.of(new ExportableCard("Force of Will", 2)),
+                BoardType.TOKENS, List.of(new ExportableCard("Soldier", 12)));
         assertThat(formatter.format("Example", zones)).isEqualTo("Commander\n1 Atraxa, Praetors' Voice\n\nCompanion\n1 Keruga, the Macrosage\n\nDeck\n4 Brainstorm\n4 Ponder\n\nSideboard\n2 Force of Will");
+    }
+
+    @Test void tokenOnlyZoneProducesEmptyContent() {
+        assertThat(formatter.format("Accessories", Map.of(BoardType.TOKENS,
+                List.of(new ExportableCard("Soldier", 12))))).isEmpty();
     }
 
     @Test void omitsEmptyZonesAndDoesNotAddTrailingNewline() {
