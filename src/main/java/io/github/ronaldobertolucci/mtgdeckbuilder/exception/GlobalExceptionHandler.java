@@ -73,6 +73,7 @@ public class GlobalExceptionHandler {
         var response = problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
         if (ex.getCode() != null) response.getBody().setProperty("code", ex.getCode().name());
         if (ex.getField() != null) response.getBody().setProperty("field", ex.getField());
+        if (ex.getLine() != null) response.getBody().setProperty("line", ex.getLine());
         if (!ex.getOracleIds().isEmpty()) response.getBody().setProperty("oracleIds", ex.getOracleIds());
         return response;
     }

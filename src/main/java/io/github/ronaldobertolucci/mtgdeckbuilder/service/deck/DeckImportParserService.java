@@ -2,6 +2,7 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.ParsedDeckCard;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +18,7 @@ public class DeckImportParserService {
 
     public List<ParsedDeckCard> parse(String rawText) {
         if (rawText == null || rawText.isBlank()) {
-            throw new RuleViolationException("Deck import text is required");
+            throw importError(RuleErrorCode.IMPORT_TEXT_REQUIRED, "Deck import text is required", null);
         }
         List<ParsedDeckCard> cards = new ArrayList<>();
         BoardType board = BoardType.MAINBOARD;
@@ -40,21 +41,25 @@ public class DeckImportParserService {
             }
             var card = CARD.matcher(line);
             if (!card.matches()) {
-                throw new RuleViolationException("Invalid deck import line: " + lineNumber);
+                throw importError(RuleErrorCode.IMPORT_INVALID_LINE, "Invalid deck import line: " + lineNumber, lineNumber);
             }
             int quantity;
             try {
                 quantity = Integer.parseInt(card.group(1));
             } catch (NumberFormatException ex) {
-                throw new RuleViolationException("Invalid card quantity at line: " + lineNumber);
+                throw importError(RuleErrorCode.IMPORT_INVALID_QUANTITY, "Invalid card quantity at line: " + lineNumber, lineNumber);
             }
             String name = card.group(2).strip();
             if (quantity <= 0 || name.isEmpty()) {
-                throw new RuleViolationException("Invalid card quantity or name at line: " + lineNumber);
+                throw importError(RuleErrorCode.IMPORT_INVALID_QUANTITY, "Invalid card quantity or name at line: " + lineNumber, lineNumber);
             }
             cards.add(new ParsedDeckCard(name, quantity, board));
         }
-        if (cards.isEmpty()) throw new RuleViolationException("Deck import must contain cards");
+        if (cards.isEmpty()) throw importError(RuleErrorCode.IMPORT_NO_CARDS, "Deck import must contain cards", null);
         return cards;
+    }
+
+    private RuleViolationException importError(RuleErrorCode code, String message, Integer line) {
+        return new RuleViolationException(code, message, "rawText", List.of(), line);
     }
 }

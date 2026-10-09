@@ -7,6 +7,7 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.Format;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.user.User;
 import io.github.ronaldobertolucci.mtgdeckbuilder.repository.UserRepository;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckService;
+import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.DeckImportParserService;
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.security.TokenService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -382,6 +384,36 @@ class DeckControllerTest {
                         """))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
+    }
+
+    @Test void importParserErrorExposesStructuredLine() throws Exception {
+        var error = assertThrows(RuleViolationException.class,
+                () -> new DeckImportParserService().parse("Deck\n\nbad line"));
+        when(service.importDeck(eq(42L), any())).thenThrow(error);
+        mvc.perform(post("/api/decks/import").contextPath("/api").with(owner())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Modern","format":"MODERN","rawText":"Deck\\n\\nbad line"}
+                        """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("IMPORT_INVALID_LINE"))
+                .andExpect(jsonPath("$.field").value("rawText"))
+                .andExpect(jsonPath("$.line").value(3));
+    }
+
+    @Test void importWithoutCardsOmitsLine() throws Exception {
+        var error = assertThrows(RuleViolationException.class,
+                () -> new DeckImportParserService().parse("Deck"));
+        when(service.importDeck(eq(42L), any())).thenThrow(error);
+        mvc.perform(post("/decks/import").with(owner()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Modern","format":"MODERN","rawText":"Deck"}
+                        """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("IMPORT_NO_CARDS"))
+                .andExpect(jsonPath("$.field").value("rawText"))
+                .andExpect(jsonPath("$.line").doesNotExist());
     }
 
     @Test void createsDeckWithAuthenticatedUserId() throws Exception {

@@ -2,6 +2,7 @@ package io.github.ronaldobertolucci.mtgdeckbuilder.service.deck;
 
 import io.github.ronaldobertolucci.mtgdeckbuilder.dto.deck.ParsedDeckCard;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
+import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleErrorCode;
 import io.github.ronaldobertolucci.mtgdeckbuilder.model.deck.BoardType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -10,6 +11,30 @@ import static org.assertj.core.api.Assertions.*;
 
 class DeckImportParserServiceTest {
     private final DeckImportParserService parser = new DeckImportParserService();
+
+    @Test void reportsPhysicalLineIncludingHeadersAndBlankLines() {
+        assertImportError("Deck\r\n\r\n4 Island\r\nbad line",
+                RuleErrorCode.IMPORT_INVALID_LINE, 4);
+    }
+
+    @Test void reportsQuantityErrorsWithoutParsingTheMessage() {
+        assertImportError("Deck\n0 Island", RuleErrorCode.IMPORT_INVALID_QUANTITY, 2);
+        assertImportError("999999999999999 Island", RuleErrorCode.IMPORT_INVALID_QUANTITY, 1);
+    }
+
+    @Test void reportsWholeTextErrorsWithoutInventingALine() {
+        assertImportError(null, RuleErrorCode.IMPORT_TEXT_REQUIRED, null);
+        assertImportError("  ", RuleErrorCode.IMPORT_TEXT_REQUIRED, null);
+        assertImportError("Deck\nSideboard", RuleErrorCode.IMPORT_NO_CARDS, null);
+    }
+
+    private void assertImportError(String text, RuleErrorCode code, Integer line) {
+        assertThatThrownBy(() -> parser.parse(text)).isInstanceOfSatisfying(RuleViolationException.class, ex -> {
+            assertThat(ex.getCode()).isEqualTo(code);
+            assertThat(ex.getField()).isEqualTo("rawText");
+            assertThat(ex.getLine()).isEqualTo(line);
+        });
+    }
 
     @Test void stripsArenaPrintingAndRecognizesCompanion() {
         assertThat(parser.parse("""

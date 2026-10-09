@@ -1,6 +1,10 @@
 package io.github.ronaldobertolucci.mtgdeckbuilder.exception;
 
 public enum RuleErrorCode {
+    IMPORT_TEXT_REQUIRED,
+    IMPORT_NO_CARDS,
+    IMPORT_INVALID_LINE,
+    IMPORT_INVALID_QUANTITY,
     INVALID_COMMANDER_SELECTION,
     COMMANDER_NOT_ELIGIBLE,
     INCOMPATIBLE_COMMANDER_PAIR,

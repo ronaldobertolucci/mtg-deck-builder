@@ -600,6 +600,25 @@ O deck permanece com status UNDEFINED até a análise.
 Na busca por nome, HTTP 404 do Card Manager é tratado como carta não encontrada e
 retorna 422 com o nome informado. Falhas de conexão e respostas 5xx retornam 503.
 
+Erros de parsing retornam `422 application/problem+json`, com `code` estável,
+`field: "rawText"` e `line` quando há uma linha específica. `line` começa em 1 e
+conta também cabeçalhos e linhas vazias do texto original. O frontend deve usar
+esses campos para localizar/traduzir o erro, sem extrair dados de `detail`.
+
+| Código | Significado |
+| --- | --- |
+| `IMPORT_TEXT_REQUIRED` | Texto nulo ou vazio ao chamar o parser. |
+| `IMPORT_NO_CARDS` | Texto contém apenas cabeçalhos/linhas vazias. |
+| `IMPORT_INVALID_LINE` | Linha não segue `quantidade nome` nem é um cabeçalho aceito. |
+| `IMPORT_INVALID_QUANTITY` | Quantidade zero ou fora do intervalo de inteiros positivos. |
+
+Por exemplo, `Deck\n\nbad line` retorna `code: "IMPORT_INVALID_LINE"`,
+`field: "rawText"`, `line: 3`, além dos campos padrão de `ProblemDetail`.
+Erros gerais não incluem `line`. Texto vazio na requisição HTTP continua sendo
+rejeitado antes do parser com `400` e `errors[]` de validação de campos.
+Resolução de nomes e regras de composição mantêm seus contratos atuais;
+essa informação de linha se aplica aos erros de sintaxe do texto.
+
 ### Criar deck
 
 ```http
