@@ -564,6 +564,7 @@ e retorna `200 OK` com JSON (`PrintDeckResponse`):
 
 ```json
 {
+  "compositionRevision": "v1:fd6914b754541b5412fafa806cd576d4b2dfbef07b580862a369013e36deda75",
   "cards": [
     {"oracleId": "b2c6aa39-2d2a-459c-a555-fb48ba993373", "quantity": 5}
   ]
@@ -577,7 +578,27 @@ Ocorrências do mesmo oracle ID em zonas diferentes são consolidadas, somando a
 quantidades; por exemplo, 2 no MAINBOARD e 3 no SIDEBOARD resultam em `quantity: 5`.
 As zonas e a origem automática não são expostas na resposta.
 
-Deck vazio retorna `{"cards":[]}`. A resposta contém a lista completa, sem paginação;
+`compositionRevision` é uma string opaca: consumidores devem apenas armazenar e
+comparar seu valor. Ela representa os pares oracle ID + quantidade agregada de
+todas as zonas, incluindo tokens automáticos, exatamente como retornados em
+`cards`. Trocar IDs ou alterar quantidades altera a revisão, mesmo quando os
+totais permanecem iguais. Mover cartas entre zonas, reordenar ou redistribuir
+entradas repetidas e alterar atributos do deck (como nome) preserva a revisão
+quando a composição agregada não muda.
+
+A implementação `v1` calcula SHA-256 em UTF-8 dos pares ordenados pelo UUID
+canônico em minúsculas, serializando cada par como `oracleId:quantity\n` (quantidade
+decimal e quebra de linha LF). Cartas e revisão são produzidas a partir da mesma
+leitura das cartas persistidas; a assinatura é calculada sobre a lista agregada
+que será retornada, sem outra consulta e sem bloquear edições concorrentes.
+A revisão cobre apenas a composição, sem versionar opções do Scryfall ou proxies.
+O Printing pode compará-la entre páginas de opções para detectar alterações;
+o tratamento de revisão esperada, `409 DECK_COMPOSITION_CHANGED` e reinício do
+carregamento pertence ao Printing e ao frontend.
+
+Deck vazio também possui revisão determinística e retorna
+`{"compositionRevision":"v1:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cards":[]}`.
+A resposta contém a lista completa, sem paginação;
 a paginação das opções ocorre no Printing que consome o endpoint. A consulta não acessa o Card Manager,
 não resolve nomes, imagens ou IDs de impressão e não altera nem analisa o deck.
 Deck inexistente ou pertencente a outro usuário retorna `404 Not Found`.

@@ -307,20 +307,23 @@ class DeckControllerTest {
         when(tokenService.getSubject("print-token")).thenReturn("owner@example.com");
         when(users.findByUsername("owner@example.com")).thenReturn(user);
         when(exportService.printCards(deckId, 42L))
-                .thenReturn(new PrintDeckResponse(List.of(new PrintDeckCardResponse(oracleId, 5))));
+                .thenReturn(new PrintDeckResponse("v1:opaque-revision", List.of(new PrintDeckCardResponse(oracleId, 5))));
         mvc.perform(get("/api/decks/{id}/print-cards", deckId).contextPath("/api")
                         .header("Authorization", "Bearer print-token"))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
-                        {"cards":[{"oracleId":"%s","quantity":5}]}
+                        {"compositionRevision":"v1:opaque-revision","cards":[{"oracleId":"%s","quantity":5}]}
                         """.formatted(oracleId)));
         verify(exportService).printCards(deckId, 42L);
     }
 
     @Test void printCardsOfEmptyDeckReturnsEmptyArray() throws Exception {
-        when(exportService.printCards(deckId, 42L)).thenReturn(new PrintDeckResponse(List.of()));
+        String revision = "v1:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        when(exportService.printCards(deckId, 42L)).thenReturn(new PrintDeckResponse(revision, List.of()));
         mvc.perform(get("/decks/{id}/print-cards", deckId).with(owner()))
-                .andExpect(status().isOk()).andExpect(content().json("{\"cards\":[]}"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.compositionRevision").value(revision))
+                .andExpect(jsonPath("$.cards").isEmpty());
     }
 
     @Test void printCardsOfMissingOrUnownedDeckReturns404() throws Exception {

@@ -9,6 +9,9 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.service.card.CardIntegrationSe
 import io.github.ronaldobertolucci.mtgdeckbuilder.service.deck.export.ExportFormatterFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 @Service
@@ -27,12 +30,27 @@ public class DeckExportService {
     @Transactional(readOnly = true)
     public PrintDeckResponse printCards(UUID deckId, Long userId) {
         Deck deck = repository.findByIdAndUserId(deckId, userId).orElseThrow(DeckNotFoundException::new);
-        Map<UUID, Integer> quantities = new TreeMap<>();
+        Map<UUID, Integer> quantities = new TreeMap<>(Comparator.comparing(UUID::toString));
         for (DeckCard card : deck.getCards()) {
             quantities.merge(card.getOracleId(), card.getQuantity(), Integer::sum);
         }
-        return new PrintDeckResponse(quantities.entrySet().stream()
-                .map(entry -> new PrintDeckCardResponse(entry.getKey(), entry.getValue())).toList());
+        var cards = quantities.entrySet().stream()
+                .map(entry -> new PrintDeckCardResponse(entry.getKey(), entry.getValue())).toList();
+        // Hash the response snapshot, without reading the deck again.
+        return new PrintDeckResponse(compositionRevision(cards), cards);
+    }
+
+    private String compositionRevision(List<PrintDeckCardResponse> cards) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            // v1: sorted lowercase UUIDs, ':' + decimal quantity + LF, encoded in UTF-8.
+            for (var card : cards) {
+                digest.update((card.oracleId() + ":" + card.quantity() + "\n").getBytes(StandardCharsets.UTF_8));
+            }
+            return "v1:" + HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     @Transactional(readOnly = true)

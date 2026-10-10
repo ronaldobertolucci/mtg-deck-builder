@@ -207,8 +207,119 @@ class DeckExportServiceTest {
 
     @Test void printCardsOfEmptyDeckReturnsEmptyList() {
         when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(new Deck(42L, "Empty", Format.MODERN)));
-        assertThat(service.printCards(deckId, 42L).cards()).isEmpty();
+        var response = service.printCards(deckId, 42L);
+        assertThat(response.cards()).isEmpty();
+        assertThat(response.compositionRevision())
+                .isEqualTo("v1:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assertThat(service.printCards(deckId, 42L)).isEqualTo(response);
         verifyNoInteractions(integration);
+    }
+
+    @Test void replacingCardChangesRevisionEvenWithSameDistinctCountAndTotalQuantity() {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        var card = new DeckCard(UUID.randomUUID(), 2, BoardType.MAINBOARD);
+        deck.addCard(card);
+        deck.addCard(new DeckCard(UUID.randomUUID(), 3, BoardType.SIDEBOARD));
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var before = service.printCards(deckId, 42L);
+
+        card.setOracleId(UUID.randomUUID());
+        var after = service.printCards(deckId, 42L);
+
+        assertThat(after.cards()).hasSameSizeAs(before.cards());
+        assertThat(after.cards().stream().mapToInt(PrintDeckCardResponse::quantity).sum())
+                .isEqualTo(before.cards().stream().mapToInt(PrintDeckCardResponse::quantity).sum());
+        assertThat(after.compositionRevision()).isNotEqualTo(before.compositionRevision());
+    }
+
+    @ParameterizedTest @EnumSource(BoardType.class)
+    void quantityChangeInAnyZoneChangesRevision(BoardType board) {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        var card = new DeckCard(UUID.randomUUID(), 1, board);
+        deck.addCard(card);
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var before = service.printCards(deckId, 42L);
+
+        card.setQuantity(2);
+        var after = service.printCards(deckId, 42L);
+
+        assertThat(after.cards()).containsExactly(new PrintDeckCardResponse(card.getOracleId(), 2));
+        assertThat(after.compositionRevision()).isNotEqualTo(before.compositionRevision());
+    }
+
+    @Test void addingChangingAndRemovingAutomaticTokensChangesRevision() {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        deck.addCard(new DeckCard(UUID.randomUUID(), 2, BoardType.MAINBOARD));
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var original = service.printCards(deckId, 42L);
+
+        var token = DeckCard.generatedToken(UUID.randomUUID());
+        deck.addCard(token);
+        var added = service.printCards(deckId, 42L);
+        assertThat(added.cards()).contains(new PrintDeckCardResponse(token.getOracleId(), 1));
+        assertThat(added.compositionRevision()).isNotEqualTo(original.compositionRevision());
+
+        token.setQuantity(3);
+        var changed = service.printCards(deckId, 42L);
+        assertThat(changed.cards()).contains(new PrintDeckCardResponse(token.getOracleId(), 3));
+        assertThat(changed.compositionRevision()).isNotEqualTo(added.compositionRevision());
+
+        deck.removeCard(token);
+        var removed = service.printCards(deckId, 42L);
+        assertThat(removed.compositionRevision()).isNotEqualTo(changed.compositionRevision());
+        assertThat(removed).isEqualTo(original);
+        verifyNoInteractions(integration);
+    }
+
+    @Test void movingCardsBetweenZonesPreservesRevision() {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        var card = new DeckCard(UUID.randomUUID(), 1, BoardType.MAINBOARD);
+        deck.addCard(card);
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var before = service.printCards(deckId, 42L);
+
+        for (var board : BoardType.values()) {
+            card.setBoardType(board);
+            assertThat(service.printCards(deckId, 42L)).isEqualTo(before);
+        }
+    }
+
+    @Test void normalizedIdsEntryOrderAndDuplicateDistributionPreserveRevision() {
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID second = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        var firstCard = new DeckCard(first, 5, BoardType.MAINBOARD);
+        var secondCard = new DeckCard(second, 3, BoardType.SIDEBOARD);
+        deck.addCard(secondCard);
+        deck.addCard(firstCard);
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var before = service.printCards(deckId, 42L);
+        assertThat(before.cards()).containsExactly(
+                new PrintDeckCardResponse(first, 5), new PrintDeckCardResponse(second, 3));
+        assertThat(before.compositionRevision())
+                .isEqualTo("v1:5c46373baf957f1ea7d75b8a0f658c72acc43532526143b624da81953da0247e");
+
+        deck.removeCard(firstCard);
+        deck.removeCard(secondCard);
+        deck.addCard(new DeckCard(first, 2, BoardType.MAINBOARD));
+        deck.addCard(new DeckCard(UUID.fromString("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"), 3, BoardType.SIDEBOARD));
+        deck.addCard(new DeckCard(first, 2, BoardType.SIDEBOARD));
+        deck.addCard(new DeckCard(first, 1, BoardType.COMMANDER));
+
+        assertThat(service.printCards(deckId, 42L)).isEqualTo(before);
+    }
+
+    @Test void changingDeckAttributesPreservesRevision() {
+        Deck deck = new Deck(42L, "Deck", Format.MODERN);
+        deck.addCard(new DeckCard(UUID.randomUUID(), 2, BoardType.MAINBOARD));
+        when(repository.findByIdAndUserId(deckId, 42L)).thenReturn(Optional.of(deck));
+        var before = service.printCards(deckId, 42L);
+
+        deck.setName("Renamed");
+        deck.setFormat(Format.LEGACY);
+        deck.recordAnalysis(DeckStatus.IRREGULAR, java.time.Instant.parse("2026-10-09T12:00:00Z"), List.of("Updated analysis"));
+
+        assertThat(service.printCards(deckId, 42L)).isEqualTo(before);
     }
 
     @Test void printCardsOfMissingOrUnownedDeckThrows() {
