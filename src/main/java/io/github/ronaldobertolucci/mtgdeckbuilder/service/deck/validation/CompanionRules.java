@@ -31,7 +31,7 @@ final class CompanionRules {
             throw new RuleViolationException(RuleErrorCode.COMPANION_LIMIT_EXCEEDED,
                     "A deck can have at most one companion", "boardType", ids);
         }
-        // MVP: the individual companion's starting-deck condition is intentionally not evaluated.
+        // Starting-deck conditions are evaluated by DeckAnalysisService, allowing work-in-progress decks.
     }
 
     static void validateBoard(Deck deck) {

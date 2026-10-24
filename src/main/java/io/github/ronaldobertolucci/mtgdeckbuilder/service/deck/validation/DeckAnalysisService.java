@@ -48,7 +48,6 @@ public class DeckAnalysisService {
         }
         var companionRows = deck.getCards().stream().filter(c -> c.getBoardType() == BoardType.COMPANION).toList();
         if (!companionRows.isEmpty()) {
-            uncertainties.add(reason(AnalysisReason.Severity.UNCERTAINTY, "COMPANION_REQUIREMENTS_NOT_EVALUATED", "Companion-specific deckbuilding requirements are not implemented; compliance cannot be confirmed.", "oracleIds", companionRows.stream().map(c -> c.getOracleId().toString()).toList()));
             if (companionRows.size() != 1 || companions != 1) violations.add(reason(AnalysisReason.Severity.VIOLATION, "INVALID_COMPANION_SELECTION", "Only one companion with quantity 1 is allowed.", "oracleIds", companionRows.stream().map(c -> c.getOracleId().toString()).toList(), "quantities", companionRows.stream().map(DeckCard::getQuantity).toList()));
         }
         Map<UUID, Long> quantities = new LinkedHashMap<>();
@@ -106,6 +105,7 @@ public class DeckAnalysisService {
                 });
             }
         }
+        CompanionRequirementRules.evaluate(deck, details, violations, uncertainties);
         var status = !violations.isEmpty() ? DeckStatus.IRREGULAR
                 : !uncertainties.isEmpty() ? DeckStatus.UNDEFINED : DeckStatus.REGULAR;
         List<AnalysisReason> messages = new ArrayList<>(violations);

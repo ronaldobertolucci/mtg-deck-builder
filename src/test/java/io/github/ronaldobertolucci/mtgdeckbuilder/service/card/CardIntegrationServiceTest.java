@@ -219,6 +219,20 @@ class CardIntegrationServiceTest {
     }
 
     @Test
+    void readsManaCostsOfIndividualFacesForCompanionValidation() {
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess("""
+                        {"oracle_id":"%s","name":"Front // Back","layout":"modal_dfc",
+                         "cmc":2,"card_faces":[
+                           {"name":"Front","type_line":"Creature","oracle_text":"","mana_cost":"{1}{G}"},
+                           {"name":"Back","type_line":"Creature","oracle_text":"","mana_cost":"{G}{G}"}]}
+                        """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
+        var card = service.fetchCardDetails(ORACLE_ID);
+        assertThat(card.cardFaces()).extracting(face -> face.manaCost()).containsExactly("{1}{G}", "{G}{G}");
+        server.verify();
+    }
+
+    @Test
     void exactNameSearchExtractsFirstItemAndCachesExactCase() {
         server.expect(once(), requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
                 .andExpect(method(HttpMethod.GET))

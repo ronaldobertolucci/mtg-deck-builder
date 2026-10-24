@@ -200,4 +200,55 @@ class DeckAnalysisServiceTest {
         });
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "25eaa977-ca85-4f8d-8be5-9297a3edb14f", "f0587c55-06c1-4930-a62e-668f37464ce9",
+        "35428c77-9731-4d4d-8f75-e939a491cf86", "ca5121b2-e6d9-40bc-a2d2-05852c4efbe8",
+        "3bc757c1-3adb-4321-8832-8e1cc9e687f7", "158a6225-a246-4fd6-aa57-0df8067b4383",
+        "6985c8a9-9299-461b-8bef-bd2b2c739c11", "913383a1-9c0d-40a1-8c5a-b0a8a95c09a6",
+        "e15504a7-2b67-4185-b916-172145f10b19", "7b515c56-7b1e-42a8-82b0-1b30201fb162"
+    })
+    void allCoveredCompanionsCanProduceRegularStatus(String oracleId) {
+        UUID land = basic(80, BoardType.MAINBOARD);
+        when(integration.refreshCardDetails(land)).thenReturn(new CardDetailsResponse(land,
+                "Island", "Basic Land — Island", "", List.of(), Map.of("modern",CardLegality.LEGAL),
+                List.of(),0.0,"","common"));
+        knownCompanion(oracleId, CardLegality.LEGAL);
+        expect(DeckStatus.REGULAR);
+        assertThat(deck.getAnalysisReasons()).isEmpty();
+    }
+
+    void knownCompanion(String oracleId, CardLegality legality) {
+        UUID id = UUID.fromString(oracleId);
+        deck.addCard(new DeckCard(id,1,BoardType.COMPANION));
+        when(integration.refreshCardDetails(id)).thenReturn(new CardDetailsResponse(id,
+                "Localized companion name", "Creature", "", List.of(),
+                Map.of(deck.getFormat().name(),legality), List.of("Companion")));
+    }
+
+    @Test void satisfiedCompanionStillRespectsBan() {
+        basic(80,BoardType.MAINBOARD);
+        knownCompanion("e15504a7-2b67-4185-b916-172145f10b19",CardLegality.BANNED);
+        expect(DeckStatus.IRREGULAR);
+        assertThat(deck.getAnalysisReasons()).extracting(AnalysisReason::getCode).containsExactly("CARD_BANNED");
+    }
+
+    @Test void companionViolationDisappearsAfterRepairAndReanalysis() {
+        basic(79,BoardType.MAINBOARD);
+        knownCompanion("e15504a7-2b67-4185-b916-172145f10b19",CardLegality.LEGAL);
+        expect(DeckStatus.IRREGULAR);
+        assertThat(deck.getAnalysisReasons()).extracting(AnalysisReason::getCode)
+                .containsExactly("COMPANION_REQUIREMENT_VIOLATED");
+        basic(1,BoardType.MAINBOARD); expect(DeckStatus.REGULAR);
+        assertThat(deck.getAnalysisMessages()).isEmpty();
+    }
+
+    @Test void coveredCompanionWithIncompleteCharacteristicsIsUndefined() {
+        basic(60,BoardType.MAINBOARD);
+        knownCompanion("25eaa977-ca85-4f8d-8be5-9297a3edb14f",CardLegality.LEGAL);
+        expect(DeckStatus.UNDEFINED);
+        assertThat(deck.getAnalysisReasons()).extracting(AnalysisReason::getCode)
+                .containsExactly("COMPANION_CARD_DATA_INCOMPLETE");
+    }
+
 }
