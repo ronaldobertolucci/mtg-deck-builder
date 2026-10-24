@@ -25,6 +25,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 public class CardIntegrationService {
 
     private static final int NAME_SEARCH_PAGE_SIZE = 100;
+    private static final Set<String> NON_DECK_LAYOUTS = Set.of(
+            "token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard");
 
     private final Cache<UUID, ResolvedCardResponse> resolvedCards =
             Caffeine.newBuilder().maximumSize(10000)
@@ -63,45 +65,49 @@ public class CardIntegrationService {
             throw new CardManagerUnavailableException("Card Manager URL is not configured", null);
         }
         try {
-            CardSearchResponse response = searchCards(
-                    "/cards/search?lang=en&name_exact={name}&limit=1", name, includeTokens);
-            if (response.items().isEmpty()) {
-                return requestCardByFrontFaceName(name, includeTokens);
-            }
-            return response.items().getFirst();
+            CardDetailsResponse match = findCardByName(name, includeTokens, false);
+            if (match == null) match = findCardByName(name, includeTokens, true);
+            if (match == null) throw new RuleViolationException("Card not found by name: " + name);
+            return match;
         } catch (RestClientException ex) {
             throw new CardManagerUnavailableException("Card Manager is unavailable", ex);
         }
     }
 
-    private CardDetailsResponse requestCardByFrontFaceName(String name, boolean includeTokens) {
+    private CardDetailsResponse findCardByName(String name, boolean includeTokens, boolean frontFace) {
         CardDetailsResponse match = null;
         int offset = 0;
         while (true) {
             CardSearchResponse response = searchCards(
-                    "/cards/search?lang=en&name={name}&limit=" + NAME_SEARCH_PAGE_SIZE + "&offset=" + offset,
+                    "/cards/search?lang=en&" + (frontFace ? "name" : "name_exact")
+                            + "={name}&limit=" + NAME_SEARCH_PAGE_SIZE + "&offset=" + offset,
                     name, includeTokens);
             for (CardDetailsResponse card : response.items()) {
+                if (!isNameSearchCandidate(card, includeTokens)) continue;
                 // Arena exports only the front name; a partial match or a back face is insufficient.
-                if (card.cardFaces().size() < 2 || card.cardFaces().getFirst() == null
-                        || !name.equals(card.cardFaces().getFirst().name())) continue;
+                if (frontFace && (card.cardFaces().size() < 2 || card.cardFaces().getFirst() == null
+                        || !name.equals(card.cardFaces().getFirst().name()))) continue;
                 if (card.oracleId() == null) {
                     throw new CardManagerUnavailableException("Card Manager returned a card without an oracle ID", null);
                 }
                 if (match != null && !match.oracleId().equals(card.oracleId())) {
-                    throw new RuleViolationException("Ambiguous front face name: " + name);
+                    throw new RuleViolationException((frontFace ? "Ambiguous front face name: " : "Ambiguous card name: ") + name);
                 }
                 match = card;
             }
             // Read every page to find later matches and detect ambiguous oracle IDs.
             if (!response.hasNext()) break;
-            if (response.items().isEmpty()) {
-                throw new CardManagerUnavailableException("Card Manager returned an invalid search page", null);
-            }
             offset += response.items().size();
         }
-        if (match == null) throw new RuleViolationException("Card not found by name: " + name);
         return match;
+    }
+
+    private boolean isNameSearchCandidate(CardDetailsResponse card, boolean accessory) {
+        boolean isAccessory = ResolvedCardResponse.isAccessory(card.layout(), card.typeLine());
+        if (accessory) return isAccessory;
+        // Placeholder cards and non-deck components can share a playable card's exact name.
+        return !isAccessory && !"Card".equals(card.typeLine())
+                && (card.layout() == null || !NON_DECK_LAYOUTS.contains(card.layout()));
     }
 
     private CardSearchResponse searchCards(String path, String name, boolean includeTokens) {
@@ -109,7 +115,8 @@ public class CardIntegrationService {
                 .uri(path + (includeTokens ? "&include_tokens=true" : ""), name)
                 .retrieve()
                 .body(CardSearchResponse.class);
-        if (response == null || response.items() == null || response.items().contains(null)) {
+        if (response == null || response.items() == null || response.items().contains(null)
+                || (response.hasNext() && response.items().isEmpty())) {
             throw new CardManagerUnavailableException("Card Manager returned an invalid search response", null);
         }
         return response;

@@ -53,11 +53,59 @@ class CommanderCreationFlowTest {
 
     @BeforeEach void clearCache() { cacheManager.getCache("cards").clear(); cacheManager.getCache("cards_by_name").clear(); }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"legal", "banned", "not_legal"})
+    void importResolvesSavageLandsAsLandAndPreservesLegalityValidation(String legality) throws Exception {
+        UUID land = UUID.randomUUID(), accessory = UUID.randomUUID(), commander = UUID.randomUUID();
+        String landJson = """
+                {"oracle_id":"%s","name":"Savage Lands","type_line":"Land","layout":"normal",
+                 "color_identity":["B","R","G"],"legalities":{"commander":"%s"}}
+                """.formatted(land, legality);
+        String commanderJson = """
+                {"oracle_id":"%s","name":"Leader","type_line":"Legendary Creature","layout":"normal",
+                 "oracle_text":"","color_identity":["B","R","G"],"legalities":{"commander":"legal"}}
+                """.formatted(commander);
+        when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Savage%20Lands&limit=100&offset=0"))
+                .andRespond(withSuccess("""
+                        {"items":[{"oracle_id":"%s","name":"Savage Lands","type_line":"Card","layout":"normal",
+                          "legalities":{"commander":"not_legal"}},%s],"limit":100,"offset":0,"hasNext":false}
+                        """.formatted(accessory, landJson), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Leader&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[" + commanderJson + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        if (legality.equals("legal")) {
+            server.expect(requestTo("http://card-manager.test/cards/" + commander + "?lang=en"))
+                    .andRespond(withSuccess(commanderJson, MediaType.APPLICATION_JSON));
+            server.expect(requestTo("http://card-manager.test/cards/" + land + "?lang=en"))
+                    .andRespond(withSuccess(landJson, MediaType.APPLICATION_JSON));
+        }
+        User user = new User(); user.setId(42L);
+        var result = mvc.perform(post("/decks/import")
+                .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name":"Savage Lands","format":"COMMANDER","rawText":"1 Savage Lands\\nCommander\\n1 Leader"}
+                        """));
+        if (legality.equals("legal")) {
+            result.andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.cards.length()").value(2))
+                    .andExpect(jsonPath("$.cards[0].oracleId").value(land.toString()))
+                    .andExpect(jsonPath("$.cards[0].boardType").value("MAINBOARD"));
+            verify(decks, times(2)).saveAndFlush(any());
+        } else {
+            result.andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value(legality.equals("banned") ? "CARD_BANNED" : "CARD_NOT_LEGAL"))
+                    .andExpect(jsonPath("$.oracleIds[0]").value(land.toString()));
+            verify(decks, times(1)).saveAndFlush(any());
+        }
+        server.verify();
+    }
+
     @org.junit.jupiter.api.Test
     void importReturns422WhenCardManagerCannotFindCommanderName() throws Exception {
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Missing&limit=1"))
-                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Missing&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=Missing&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         User user = new User();
@@ -89,11 +137,11 @@ class CommanderCreationFlowTest {
         String encodedFront = org.springframework.web.util.UriUtils.encode(front, java.nio.charset.StandardCharsets.UTF_8);
         String encodedFull = org.springframework.web.util.UriUtils.encode(card.name(), java.nio.charset.StandardCharsets.UTF_8);
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFront + "&limit=1"))
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFront + "&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=" + encodedFront + "&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFull + "&limit=1"))
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encodedFull + "&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         String rawText = "Deck\n2 " + front + " (TST) 1\n1 " + card.name() + "\nSideboard\n1 " + front;
         User user = new User(); user.setId(42L);
@@ -124,7 +172,7 @@ class CommanderCreationFlowTest {
         String front = card.cardFaces().getFirst().name();
         String encoded = org.springframework.web.util.UriUtils.encode(front, java.nio.charset.StandardCharsets.UTF_8);
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encoded + "&limit=1"))
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=" + encoded + "&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name=" + encoded + "&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[" + payload + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
@@ -146,11 +194,11 @@ class CommanderCreationFlowTest {
     void importsCardsAndAutomaticAccessoriesUsingHttpContracts() throws Exception {
         UUID bolt = UUID.randomUUID(), automatic = UUID.randomUUID(), printing = UUID.randomUUID();
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Lightning%20Bolt&limit=100&offset=0"))
                 .andRespond(withSuccess("""
                         {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant",
                          "legalities":{"modern":"legal"},"all_parts":[{"id":"%s"}]}],
-                         "limit":1,"offset":0,"hasNext":false}
+                         "limit":100,"offset":0,"hasNext":false}
                         """.formatted(bolt, printing), MediaType.APPLICATION_JSON));
         server.expect(requestTo("http://card-manager.test/cards/resolve"))
                 .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.POST))
@@ -200,7 +248,7 @@ class CommanderCreationFlowTest {
     @ValueSource(strings = {"null", "{}", "{\"items\":null}", "{"})
     void importReturns503ForInvalidSearchResponse(String response) throws Exception {
         when(decks.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Invalid&limit=1"))
+        server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Invalid&limit=100&offset=0"))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         User user = new User(); user.setId(42L);
         mvc.perform(post("/decks/import")

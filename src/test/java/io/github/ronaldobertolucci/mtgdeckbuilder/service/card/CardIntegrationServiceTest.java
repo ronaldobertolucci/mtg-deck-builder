@@ -233,12 +233,12 @@ class CardIntegrationServiceTest {
     }
 
     @Test
-    void exactNameSearchExtractsFirstItemAndCachesExactCase() {
-        server.expect(once(), requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+    void exactNameSearchResolvesUniqueCardAndCachesExactCase() {
+        server.expect(once(), requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=100&offset=0"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}],
-                         "limit":1,"offset":0,"hasNext":false}
+                         "limit":100,"offset":0,"hasNext":false}
                         """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
         var first = service.fetchCardDetailsByName("Lightning Bolt");
         assertThat(first.oracleId()).isEqualTo(ORACLE_ID);
@@ -249,15 +249,118 @@ class CardIntegrationServiceTest {
         server.verify();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "normal,Card", "token,Token Creature", "double_faced_token,Token Creature",
+            "emblem,Emblem", "art_series,Card", "planar,Plane — Alara", "scheme,Scheme",
+            "vanguard,Vanguard", "normal,Dungeon"
+    })
+    void exactNameSkipsNonDeckComponentsWithTheSameName(String layout, String type) {
+        expectExactNameSearch("Savage Lands", 0, """
+                {"items":[
+                  {"oracle_id":"%s","name":"Savage Lands","layout":"%s","type_line":"%s",
+                   "legalities":{"commander":"not_legal"}},
+                  {"oracle_id":"%s","name":"Savage Lands","layout":"normal","type_line":"Land",
+                   "legalities":{"commander":"legal"}}],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(UUID.randomUUID(), layout, type, ORACLE_ID), false);
+
+        var land = service.fetchCardDetailsByName("Savage Lands");
+        assertThat(land.oracleId()).isEqualTo(ORACLE_ID);
+        assertThat(land.typeLine()).isEqualTo("Land");
+        assertThat(service.fetchCardDetailsByName("Savage Lands")).isSameAs(land);
+        server.verify();
+    }
+
+    @Test
+    void exactNameFindsPlayableCardAfterAccessoryOnlyPage() {
+        expectExactNameSearch("Savage Lands", 0, """
+                {"items":[{"oracle_id":"%s","name":"Savage Lands","type_line":"Card"}],"limit":100,"offset":0,"hasNext":true}
+                """.formatted(UUID.randomUUID()), false);
+        expectExactNameSearch("Savage Lands", 1, """
+                {"items":[{"oracle_id":"%s","name":"Savage Lands","type_line":"Land"}],"limit":100,"offset":1,"hasNext":false}
+                """.formatted(ORACLE_ID), false);
+        assertThat(service.fetchCardDetailsByName("Savage Lands").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void rejectsAmbiguousExactNameOnSameOrLaterPageWithoutCaching(boolean laterPage) {
+        String first = "{\"oracle_id\":\"" + ORACLE_ID + "\",\"name\":\"Example\",\"type_line\":\"Land\"}";
+        String second = "{\"oracle_id\":\"" + UUID.randomUUID() + "\",\"name\":\"Example\",\"type_line\":\"Creature\"}";
+        expectExactNameSearch("Example", 0, "{\"items\":[" + first + (laterPage ? "" : "," + second)
+                + "],\"limit\":100,\"offset\":0,\"hasNext\":" + laterPage + "}", false);
+        if (laterPage) expectExactNameSearch("Example", 1, "{\"items\":[" + second + "],\"limit\":100,\"offset\":1,\"hasNext\":false}", false);
+
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Example"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessage("Ambiguous card name: Example");
+        assertThat(cacheManager.getCache("cards_by_name").get("Example")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void accessoryOnlyExactMatchDoesNotPreventPlayableFrontFaceFallback() {
+        expectExactNameSearch("Front", 0, """
+                {"items":[{"oracle_id":"%s","name":"Front","type_line":"Card"}],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(UUID.randomUUID()), false);
+        expectFrontFaceSearch("Front", 0, "{\"items\":["
+                + doubleFaceJson(UUID.randomUUID(), "Front", "Other").replace("transform", "double_faced_token")
+                + "," + doubleFaceJson(ORACLE_ID, "Front", "Back") + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
+        assertThat(service.fetchCardDetailsByName("Front").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
+    @Test
+    void rejectsNameWithOnlyNonDeckComponentsWithoutCaching() {
+        expectExactNameSearch("Savage Lands", 0, """
+                {"items":[{"oracle_id":"%s","name":"Savage Lands","type_line":"Card"}],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(UUID.randomUUID()), false);
+        expectFrontFaceSearch("Savage Lands", 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Savage Lands"))
+                .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
+                .hasMessage("Card not found by name: Savage Lands");
+        assertThat(cacheManager.getCache("cards_by_name").get("Savage Lands")).isNull();
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{\"items\":[{\"name\":\"Example\",\"type_line\":\"Land\"}],\"limit\":100,\"offset\":0,\"hasNext\":false}",
+            "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":true}"
+    })
+    void invalidExactNameCandidateOrPageIsUnavailableAndNotCached(String response) {
+        expectExactNameSearch("Example", 0, response, false);
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Example"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards_by_name").get("Example")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void accessoryLookupSkipsPlayableCardAndDoesNotReuseItsNameCache() {
+        UUID token = UUID.randomUUID();
+        String items = """
+                {"items":[{"oracle_id":"%s","name":"Example","type_line":"Creature","layout":"normal"},
+                  {"oracle_id":"%s","name":"Example","type_line":"Token Creature","layout":"token"}],"limit":100,"offset":0,"hasNext":false}
+                """.formatted(ORACLE_ID, token);
+        expectExactNameSearch("Example", 0, items, false);
+        expectExactNameSearch("Example", 0, items, true);
+        assertThat(service.fetchCardDetailsByName("Example").oracleId()).isEqualTo(ORACLE_ID);
+        assertThat(service.fetchAccessoryByName("Example").oracleId()).isEqualTo(token);
+        assertThat(service.fetchCardDetailsByName("Example").oracleId()).isEqualTo(ORACLE_ID);
+        server.verify();
+    }
+
     @Test
     void differentlyCasedNameDoesNotReuseCachedExactMatch() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=100&offset=0"))
                 .andRespond(withSuccess("""
                         {"items":[{"oracle_id":"%s","name":"Lightning Bolt","type_line":"Instant"}],
-                         "limit":1,"offset":0,"hasNext":false}
+                         "limit":100,"offset":0,"hasNext":false}
                         """.formatted(ORACLE_ID), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=lightning%20bolt&limit=1"))
-                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=lightning%20bolt&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         expectFrontFaceSearch("lightning bolt", 0, """
                 {"items":[{"oracle_id":"%s","name":"Lightning Bolt"}],"limit":100,"offset":0,"hasNext":false}
                 """.formatted(ORACLE_ID), false);
@@ -272,8 +375,8 @@ class CardIntegrationServiceTest {
 
     @Test
     void emptyNameSearchThrowsRuleViolationAndIsNotCached() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
-                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         expectFrontFaceSearch("Missing", 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class)
@@ -284,7 +387,7 @@ class CardIntegrationServiceTest {
 
     @Test
     void nameSearchServerFailureIsNotCached() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=100&offset=0"))
                 .andRespond(withServerError());
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(CardManagerUnavailableException.class);
@@ -315,9 +418,9 @@ class CardIntegrationServiceTest {
 
     @Test
     void combinedNameUsesExactSearchWithoutFallback() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Front%20%2F%2F%20Back&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Front%20%2F%2F%20Back&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[" + doubleFaceJson(ORACLE_ID, "Front", "Back")
-                        + "],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+                        + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         assertThat(service.fetchCardDetailsByName("Front // Back").oracleId()).isEqualTo(ORACLE_ID);
         server.verify();
     }
@@ -500,8 +603,8 @@ class CardIntegrationServiceTest {
 
     @Test
     void manualTokenNameSearchIncludesTokens() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Token&limit=1&include_tokens=true"))
-                .andRespond(withSuccess("{\"items\":[{\"oracle_id\":\"" + ORACLE_ID + "\",\"layout\":\"token\"}],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Token&limit=100&offset=0&include_tokens=true"))
+                .andRespond(withSuccess("{\"items\":[{\"oracle_id\":\"" + ORACLE_ID + "\",\"layout\":\"token\"}],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         assertThat(service.fetchAccessoryByName("Token").layout()).isEqualTo("token");
         server.verify();
     }
@@ -511,7 +614,7 @@ class CardIntegrationServiceTest {
             "{\"items\":[null]}", "[]", "{", "{\"items\":{}}"})
     void invalidNameSearchIsUnavailableForCardsAndAccessories(String response) {
         for (boolean accessory : new boolean[]{false, true}) {
-            server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Invalid&limit=1"
+            server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Invalid&limit=100&offset=0"
                             + (accessory ? "&include_tokens=true" : "")))
                     .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         }
@@ -526,7 +629,7 @@ class CardIntegrationServiceTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(ints = {400, 404, 500, 503})
     void nameSearchHttpFailuresAreUnavailable(int status) {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=100&offset=0"))
                 .andRespond(withStatus(HttpStatus.valueOf(status)));
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(CardManagerUnavailableException.class)
@@ -536,7 +639,7 @@ class CardIntegrationServiceTest {
 
     @Test
     void nameSearchConnectionFailureIsUnavailable() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=100&offset=0"))
                 .andRespond(withException(new IOException("Connection refused")));
         assertThatThrownBy(() -> service.fetchCardDetailsByName("Missing"))
                 .isInstanceOf(CardManagerUnavailableException.class);
@@ -545,8 +648,8 @@ class CardIntegrationServiceTest {
 
     @Test
     void accessorySearchWithNoItemsIsNotFound() {
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=1&include_tokens=true"))
-                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Missing&limit=100&offset=0&include_tokens=true"))
+                .andRespond(withSuccess("{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
         expectFrontFaceSearch("Missing", 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", true);
         assertThatThrownBy(() -> service.fetchAccessoryByName("Missing"))
                 .isInstanceOf(io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException.class);
@@ -556,11 +659,11 @@ class CardIntegrationServiceTest {
     @Test
     void nameSearchPreservesRestoredCardFields() {
         UUID printing = UUID.randomUUID();
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Example&limit=1"))
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Example&limit=100&offset=0"))
                 .andRespond(withSuccess("""
                         {"items":[{"oracle_id":"%s","name":"Example","keywords":["Companion"],
                          "all_parts":[{"id":"%s","component":"token","name":"Token"}],
-                         "produced_mana":["G"],"rarity":"rare"}],"limit":1,"offset":0,"hasNext":false}
+                         "produced_mana":["G"],"rarity":"rare"}],"limit":100,"offset":0,"hasNext":false}
                         """.formatted(ORACLE_ID, printing), MediaType.APPLICATION_JSON));
         var card = service.fetchCardDetailsByName("Example");
         assertThat(card.keywords()).containsExactly("Companion");
@@ -573,10 +676,14 @@ class CardIntegrationServiceTest {
     }
 
     private void expectExactNameMissing(String name, boolean includeTokens) {
+        expectExactNameSearch(name, 0, "{\"items\":[],\"limit\":100,\"offset\":0,\"hasNext\":false}", includeTokens);
+    }
+
+    private void expectExactNameSearch(String name, int offset, String response, boolean includeTokens) {
         String encoded = org.springframework.web.util.UriUtils.encode(name, java.nio.charset.StandardCharsets.UTF_8);
-        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=" + encoded + "&limit=1"
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=" + encoded + "&limit=100&offset=" + offset
                         + (includeTokens ? "&include_tokens=true" : "")))
-                .andRespond(withSuccess("{\"items\":[],\"limit\":1,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
     }
 
     private void expectFrontFaceSearch(String name, int offset, String response, boolean includeTokens) {
