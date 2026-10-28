@@ -307,7 +307,9 @@ até 10.000 entradas e expiração de 24 horas após o último acesso. A configu
 atual do Compose só encaminha as variáveis declaradas em `environment`; acrescente
 outras nesse bloco ou em um override quando necessário.
 
-## Integração com o Card Manager
+## Integrações e revisão de regras
+
+### Integração com o Card Manager
 
 O Deck Builder consulta o serviço responsável pelo catálogo:
 
@@ -322,14 +324,101 @@ interpretam os textos oficiais em inglês. O DTO utiliza `oracle_id`, `name`,
 
 1. Na criação de Commander e na inclusão ou atualização de cartas, o serviço obtém
    os metadados usando cache por oracle ID.
-2. A integração converte falhas HTTP 4xx em carta não encontrada e falhas 5xx ou de
-   comunicação em indisponibilidade do Card Manager.
+2. Na consulta por oracle ID, a integração converte falhas HTTP 4xx em carta não
+   encontrada e falhas 5xx ou de comunicação em indisponibilidade do Card Manager.
 3. Na análise completa, cada oracle ID é consultado novamente, sem reutilizar a
    entrada anterior do cache; uma resposta bem-sucedida atualiza esse cache.
 
 Este microsserviço não importa o Bulk Data nem sincroniza diretamente com o
 Scryfall. A atualização do catálogo é responsabilidade do MTG Card Manager. Uma
 consulta nova reflete os dados atualmente disponíveis nesse serviço.
+
+### Dependência operacional e continuidade
+
+O **MTG Card Manager é necessário para o funcionamento completo do Deck Builder**.
+Ele deve estar acessível pela rede, com catálogo carregado e atualizado e contrato
+compatível com `CardIntegrationService` e seus DTOs. Configure `CARD_MANAGER_URL`
+e `CARD_MANAGER_ORACLE_DETAILS_PATH`, mantendo `{oracleId}` no caminho. O Compose
+deste repositório inicia apenas o Deck Builder e seu PostgreSQL; o Card Manager
+precisa ser disponibilizado separadamente.
+
+Além dos detalhes por oracle ID, a integração utiliza `GET /cards/search` para
+resolver nomes na importação e `POST /cards/resolve` para resolver IDs Scryfall de
+componentes relacionados, como tokens. Esses endpoints pertencem ao Card Manager;
+o Deck Builder não chama a API pública do Scryfall diretamente.
+
+O banco local guarda referências às cartas por `oracle_id`, quantidades e zonas,
+mas não mantém uma cópia persistente de seus metadados. Os caches em memória
+reduzem consultas, porém são perdidos no reinício e podem expirar ou sofrer
+remoção por capacidade. Eles não constituem um modo offline garantido.
+
+| Operação | Comportamento sem acesso ao Card Manager |
+| --- | --- |
+| Listar, consultar a estrutura, renomear e excluir decks; criar deck não Commander vazio | Continuam disponíveis com o banco local operacional. A estrutura contém IDs, não todos os metadados das cartas. |
+| Consultar `print-cards` | Retorna IDs e quantidades sem consultar o catálogo; isso não garante o carregamento das imagens pelo frontend. |
+| Criar Commander, importar, adicionar cartas, obter estatísticas, composição e exportação textual | Dependem dos metadados necessários em cache ou do serviço disponível. Falhas de comunicação sem dados em cache impedem a operação. |
+| Remover cartas | Também pode exigir consultas para validar comandantes restantes e remover acessórios órfãos. |
+| Analisar o deck | Consulta novamente cada carta, sem usar o cache anterior como fallback. Metadados indisponíveis geram incertezas; sem violações conhecidas, o resultado é `UNDEFINED`. Violações conhecidas mantêm `IRREGULAR`. |
+
+Uma queda do Scryfall não implica necessariamente uma queda do Deck Builder: a
+continuidade depende de o Card Manager conseguir servir seu catálogo persistido
+sem consultar a fonte. A implementação de ingestão, os backups e a estratégia de
+imagens pertencem a outros componentes e não são verificáveis neste repositório.
+Se a fonte deixar de existir, preservar o catálogo permite trabalhar com dados
+antigos, mas não fornece automaticamente novas cartas, erratas ou legalidades.
+
+Para manter essa integração, a operação deve:
+
+- Verificar rotineiramente a disponibilidade dos três endpoints, a compatibilidade
+  do contrato e a data da última atualização bem-sucedida do catálogo.
+- Manter a ingestão de Bulk Data no Card Manager, validar os dados antes de
+  publicá-los e preservar a última versão válida quando a atualização falhar.
+- Fazer backups do catálogo e testar sua restauração, incluindo um cenário sem
+  acesso ao Scryfall e com os caches do Deck Builder vazios.
+- Após banimentos, rotações e erratas, conferir as legalidades e os textos servidos
+  pelo catálogo e reanalisar os decks afetados. Uma nova consulta só reflete a
+  versão disponível no Card Manager, não comprova sua atualização na fonte.
+- Monitorar falhas e latência da integração. Os timeouts HTTP atuais limitam cada
+  chamada, mas não estabelecem um prazo total para operações com várias cartas.
+
+### Revisão de regras: textos, layouts e habilidades
+
+**Limitação conhecida — severidade média:** atualizar o catálogo não atualiza
+automaticamente toda a lógica de construção de decks. Parte das regras interpreta
+textos Oracle em inglês e utiliza listas explícitas de layouts e habilidades.
+Novos padrões ou alterações de texto podem exigir mudanças no código para evitar
+rejeições incorretas ou condições que o analisador não consegue avaliar.
+
+| Componente | Responsabilidade e ponto de revisão |
+| --- | --- |
+| `CardRuleOverrideService` | Reconhece terrenos básicos e exceções textuais de limite de cópias por expressões regulares. Um padrão não reconhecido pode resultar no limite padrão do formato. |
+| `CommanderEligibilityRules` e `CommanderPairRules` | Interpretam características da face relevante, permissões para comandar e habilidades que permitem pares de comandantes. Novos layouts, redações ou habilidades precisam ser revisados. |
+| `CompanionRequirementRules` | Implementa os dez companions atualmente cobertos, com regras próprias para tipos, custos, faces e habilidades. Um companion fora do mapa explícito gera `COMPANION_REQUIREMENTS_NOT_EVALUATED`. |
+
+As listas de layouts tratadas por Commander e companion não são idênticas. Uma
+alteração deve revisar ambos os caminhos conforme as regras aplicáveis, sem
+presumir que o suporte em um validador se estende aos demais. Há tratamentos para
+dados incompletos e condições desconhecidas, mas eles não substituem a revisão de
+novas mecânicas. Este serviço valida construção de decks; não simula partidas.
+
+A cada lançamento, errata ou mudança relevante nas regras, a manutenção deve:
+
+1. Identificar novos layouts, habilidades, permissões de comandante, exceções de
+   cópias e condições de companion nas cartas suportadas.
+2. Conferir os textos em inglês e as características de cada face fornecidos pelo
+   Card Manager, distinguindo mudança de dados de mudança da regra de validação.
+3. Atualizar os validadores necessários e adicionar fixtures e testes de regressão
+   para casos válidos, inválidos e incompletos, incluindo interações entre zonas,
+   limites de cópias e identidade de cor.
+4. Executar a suíte de testes antes da entrega e registrar as mudanças de regras
+   para orientar a reanálise dos decks afetados.
+
+Como evolução recomendada, centralizar a interpretação das características das
+cartas, versionar as regras e os dados usados na análise e manter overrides
+estruturados e revisados para exceções conhecidas. Quando uma condição não puder
+ser avaliada, o resultado deve explicitar essa incerteza, sem presumir legalidade.
+Essas recomendações não representam mecanismos já implementados de atualização
+automática ou versionamento.
 
 ## API
 
