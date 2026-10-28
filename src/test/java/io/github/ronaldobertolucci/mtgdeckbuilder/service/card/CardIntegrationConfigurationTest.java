@@ -21,7 +21,8 @@ class CardIntegrationConfigurationTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestClient client = new CardManagerConfiguration().cardManagerRestClient(builder, properties);
-        CardIntegrationService service = new CardIntegrationService(client, properties);
+        CardIntegrationService service = new CardIntegrationService(client, properties,
+                new org.springframework.cache.concurrent.ConcurrentMapCacheManager("cards", "cards_by_name"));
 
         assertThatThrownBy(() -> service.fetchCardDetails(UUID.randomUUID()))
                 .isInstanceOf(CardManagerUnavailableException.class)

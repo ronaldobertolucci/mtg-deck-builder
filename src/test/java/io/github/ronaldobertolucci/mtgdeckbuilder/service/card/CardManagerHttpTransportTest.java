@@ -47,7 +47,8 @@ class CardManagerHttpTransportTest {
                             "spring.http.clients.connect-timeout=5s", "spring.http.clients.read-timeout=15s")
                     .run(context -> {
                         var integration = new CardIntegrationService(context.getBean("cardManagerRestClient", RestClient.class),
-                                context.getBean(CardManagerProperties.class));
+                                context.getBean(CardManagerProperties.class),
+                                new org.springframework.cache.concurrent.ConcurrentMapCacheManager("cards", "cards_by_name"));
                         assertThat(integration.resolveCards(List.of(id))).singleElement()
                                 .satisfies(card -> assertThat(card.oracleId()).isEqualTo(oracle));
                         assertThat(protocol.get()).isEqualTo("HTTP/1.1");

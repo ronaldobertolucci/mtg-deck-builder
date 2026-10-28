@@ -32,7 +32,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 @RestClientTest(value = CardIntegrationService.class,
         properties = "services.card-manager.url=http://card-manager.test")
-@Import(CardManagerConfiguration.class)
+@Import({CardManagerConfiguration.class, CardIntegrationServiceTest.CacheClockConfiguration.class})
 @ImportAutoConfiguration(CacheAutoConfiguration.class)
 class CardIntegrationServiceTest {
 
@@ -48,6 +48,25 @@ class CardIntegrationServiceTest {
 
     @Autowired
     private CacheManager cacheManager;
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class CacheClockConfiguration {
+        @org.springframework.context.annotation.Bean
+        java.util.concurrent.atomic.AtomicLong cacheClock() {
+            return new java.util.concurrent.atomic.AtomicLong();
+        }
+
+        @org.springframework.context.annotation.Bean
+        CacheManager cacheManager(java.util.concurrent.atomic.AtomicLong clock,
+                @org.springframework.beans.factory.annotation.Value("${spring.cache.caffeine.spec}") String spec) {
+            var manager = new org.springframework.cache.caffeine.CaffeineCacheManager("cards", "cards_by_name");
+            manager.setCaffeine(com.github.benmanes.caffeine.cache.Caffeine.from(spec).ticker(clock::get));
+            return manager;
+        }
+    }
+
+    @Autowired
+    private java.util.concurrent.atomic.AtomicLong cacheClock;
 
     @Test
     void refreshBypassesAndUpdatesCache() {
@@ -65,6 +84,93 @@ class CardIntegrationServiceTest {
     void clearCache() {
         cacheManager.getCache("cards").clear();
         cacheManager.getCache("cards_by_name").clear();
+        cacheClock.set(0);
+    }
+
+    @Test
+    void frequentReadsByNameAndIdDoNotExtendMetadataLifetime() {
+        expectLegalName("Lightning Bolt");
+        expectBannedCard();
+        service.fetchCardDetailsByName("Lightning Bolt");
+        for (int minute = 10; minute < 60; minute += 10) {
+            cacheClock.set(Duration.ofMinutes(minute).toNanos());
+            assertThat(service.fetchCardDetails(ORACLE_ID).legalities().get("modern").name()).isEqualTo("LEGAL");
+            assertThat(service.fetchCardDetailsByName("Lightning Bolt").legalities().get("modern").name()).isEqualTo("LEGAL");
+        }
+        cacheClock.set(Duration.ofHours(1).toNanos());
+        var updated = service.fetchCardDetails(ORACLE_ID);
+        assertThat(updated.legalities().get("modern").name()).isEqualTo("BANNED");
+        server.verify();
+    }
+
+    @Test
+    void refreshedLegalityIsVisibleThroughEveryPreviouslyResolvedAlias() {
+        expectLegalName("Lightning Bolt");
+        expectLegalName("Bolt alias");
+        expectBannedCard();
+        service.fetchCardDetailsByName("Lightning Bolt");
+        service.fetchCardDetailsByName("Bolt alias");
+        var updated = service.refreshCardDetails(ORACLE_ID);
+        assertThat(service.fetchCardDetailsByName("Lightning Bolt")).isSameAs(updated);
+        assertThat(service.fetchCardDetailsByName("Bolt alias")).isSameAs(updated);
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isSameAs(updated);
+        server.verify();
+    }
+
+    @Test
+    void resolvingAnotherNameDoesNotReplaceOrRenewCanonicalMetadata() {
+        expectBannedCard();
+        expectLegalName("Lightning Bolt");
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en")).andRespond(withServerError());
+        var updated = service.fetchCardDetails(ORACLE_ID);
+        cacheClock.set(Duration.ofMinutes(50).toNanos());
+        assertThat(service.fetchCardDetailsByName("Lightning Bolt")).isSameAs(updated);
+        cacheClock.set(Duration.ofHours(1).toNanos());
+        // The alias is still alive, but it cannot resurrect or extend expired metadata.
+        assertThatThrownBy(() -> service.fetchCardDetailsByName("Lightning Bolt"))
+                .isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards").get(ORACLE_ID)).isNull();
+        server.verify();
+    }
+
+    @Test
+    void expiredNameAndMetadataAreReloadedFromSearch() {
+        expectLegalName("Lightning Bolt");
+        server.expect(requestTo(CARD_URL + "search?lang=en&name_exact=Lightning%20Bolt&limit=100&offset=0"))
+                .andRespond(withSuccess("{\"items\":[" + bannedJson() + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
+        service.fetchCardDetailsByName("Lightning Bolt");
+        cacheClock.set(Duration.ofHours(1).toNanos());
+        var updated = service.fetchCardDetailsByName("Lightning Bolt");
+        assertThat(updated.legalities().get("modern").name()).isEqualTo("BANNED");
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isSameAs(updated);
+        server.verify();
+    }
+
+    @Test
+    void failedRefreshDoesNotRenewOldMetadata() {
+        expectLegalName("Lightning Bolt");
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en")).andRespond(withServerError());
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en")).andRespond(withServerError());
+        service.fetchCardDetailsByName("Lightning Bolt");
+        cacheClock.set(Duration.ofMinutes(59).toNanos());
+        assertThatThrownBy(() -> service.refreshCardDetails(ORACLE_ID)).isInstanceOf(CardManagerUnavailableException.class);
+        cacheClock.set(Duration.ofHours(1).toNanos());
+        assertThatThrownBy(() -> service.fetchCardDetails(ORACLE_ID)).isInstanceOf(CardManagerUnavailableException.class);
+        assertThat(cacheManager.getCache("cards").get(ORACLE_ID)).isNull();
+        server.verify();
+    }
+
+    private void expectLegalName(String name) {
+        expectExactNameSearch(name, 0, "{\"items\":[" + bannedJson().replace("banned", "legal") + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", false);
+    }
+
+    private void expectBannedCard() {
+        server.expect(requestTo(CARD_URL + ORACLE_ID + "?lang=en"))
+                .andRespond(withSuccess(bannedJson(), MediaType.APPLICATION_JSON));
+    }
+
+    private String bannedJson() {
+        return "{\"oracle_id\":\"" + ORACLE_ID + "\",\"name\":\"Lightning Bolt\",\"type_line\":\"Instant\",\"legalities\":{\"modern\":\"banned\"}}";
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -191,12 +297,13 @@ class CardIntegrationServiceTest {
     }
 
     @Test
-    void caffeineUsesCapacityAndAccessExpirationFromApplicationProperties() {
+    void caffeineUsesCapacityAndWriteExpirationFromApplicationProperties() {
         assertThat(cacheManager.getCache("cards")).isInstanceOf(CaffeineCache.class);
         var policy = ((CaffeineCache) cacheManager.getCache("cards")).getNativeCache().policy();
 
         assertThat(policy.eviction().orElseThrow().getMaximum()).isEqualTo(10_000);
-        assertThat(policy.expireAfterAccess().orElseThrow().getExpiresAfter()).isEqualTo(Duration.ofHours(24));
+        assertThat(policy.expireAfterAccess()).isEmpty();
+        assertThat(policy.expireAfterWrite().orElseThrow().getExpiresAfter()).isEqualTo(Duration.ofHours(1));
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -244,8 +351,8 @@ class CardIntegrationServiceTest {
         assertThat(first.oracleId()).isEqualTo(ORACLE_ID);
         assertThat(first.name()).isEqualTo("Lightning Bolt");
         assertThat(service.fetchCardDetailsByName("Lightning Bolt")).isEqualTo(first);
-        assertThat(cacheManager.getCache("cards_by_name").get("Lightning Bolt").get()).isEqualTo(first);
-        assertThat(cacheManager.getCache("cards").get(ORACLE_ID)).isNull();
+        assertThat(cacheManager.getCache("cards_by_name").get("Lightning Bolt").get()).isEqualTo(ORACLE_ID);
+        assertThat(service.fetchCardDetails(ORACLE_ID)).isSameAs(first);
         server.verify();
     }
 
@@ -412,7 +519,7 @@ class CardIntegrationServiceTest {
         assertThat(card).isEqualTo(expected);
         assertThat(card.name()).isNotEqualTo(name);
         assertThat(service.fetchCardDetailsByName(name)).isSameAs(card);
-        assertThat(cacheManager.getCache("cards_by_name").get(name).get()).isSameAs(card);
+        assertThat(cacheManager.getCache("cards_by_name").get(name).get()).isEqualTo(card.oracleId());
         server.verify();
     }
 

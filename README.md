@@ -285,6 +285,7 @@ diretamente, exporte as variáveis necessárias no shell ou configure-as na IDE.
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Exigidas pelo Compose | Inicialização do contêiner PostgreSQL. |
 | `API_SECURITY_TOKEN_SECRET` | Obrigatória em prod | Segredo de assinatura JWT. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:4200` em dev | Origens autorizadas pelo CORS. |
+| `CARD_CACHE_TTL` | `1h` | Validade máxima dos metadados e aliases em cache após a escrita; aceita durações Caffeine como `30m`, `1h` ou `2h`. |
 | `CARD_MANAGER_URL` | `http://localhost:8000` em dev; vazio na configuração comum | URL base do Card Manager. |
 | `CARD_MANAGER_ORACLE_DETAILS_PATH` | `/cards/{oracleId}` | Caminho de consulta; deve conter `{oracleId}`. |
 | `APP_EMAIL_FROM` | `dev@localhost` em dev | Remetente dos e-mails. |
@@ -302,9 +303,10 @@ de e-mail e banco acima são usadas como placeholders em prod. Para sobrescrever
 propriedades locais, use os parâmetros do Spring ou as variáveis correspondentes,
 como `SPRING_DATASOURCE_URL`.
 
-O JWT possui validade configurada de duas horas. O cache `cards` usa Caffeine com
-até 10.000 entradas e expiração de 24 horas após o último acesso. A configuração
-atual do Compose só encaminha as variáveis declaradas em `environment`; acrescente
+O JWT possui validade configurada de duas horas. Os caches `cards` e `cards_by_name`
+usam Caffeine com até 10.000 entradas cada e `expireAfterWrite`, configurado por
+`CARD_CACHE_TTL` (padrão `1h`). Leituras não renovam a validade das entradas.
+A configuração atual do Compose só encaminha as variáveis declaradas em `environment`; acrescente
 outras nesse bloco ou em um override quando necessário.
 
 ## Integrações e revisão de regras
@@ -327,11 +329,36 @@ interpretam os textos oficiais em inglês. O DTO utiliza `oracle_id`, `name`,
 2. Na consulta por oracle ID, a integração converte falhas HTTP 4xx em carta não
    encontrada e falhas 5xx ou de comunicação em indisponibilidade do Card Manager.
 3. Na análise completa, cada oracle ID é consultado novamente, sem reutilizar a
-   entrada anterior do cache; uma resposta bem-sucedida atualiza esse cache.
+   entrada anterior do cache; uma resposta bem-sucedida atualiza os metadados
+   compartilhados por ID e pelos nomes já resolvidos.
 
 Este microsserviço não importa o Bulk Data nem sincroniza diretamente com o
 Scryfall. A atualização do catálogo é responsabilidade do MTG Card Manager. Uma
 consulta nova reflete os dados atualmente disponíveis nesse serviço.
+
+### Validade e consistência do cache
+
+O Card Manager atualiza as legalidades diariamente. Com `CARD_CACHE_TTL=1h`, uma
+entrada de metadados deixa de ser reutilizada uma hora após sua escrita, mesmo
+quando acessada continuamente. A próxima consulta busca dados do Card Manager;
+assim, o cache pode acrescentar até aproximadamente uma hora de atraso após uma
+atualização já disponível nesse serviço. Não há atualização automática em segundo
+plano, nem garantia de que a fonte do Card Manager esteja atualizada.
+
+Nomes são aliases para o mesmo registro de metadados por oracle ID. Uma atualização
+explícita bem-sucedida é vista pelas consultas subsequentes por ID e pelos aliases
+já resolvidos. Se apenas os metadados expirarem, um alias ainda válido consulta o
+ID novamente; ele nunca recupera uma cópia antiga de legalidade. Quando ambos
+expiram, a próxima consulta por nome resolve novamente a busca no catálogo.
+
+Falhas de consulta não renovam a validade das entradas. Depois da expiração, a
+indisponibilidade do Card Manager é sinalizada sem reutilizar silenciosamente
+metadados vencidos. Uma atualização explícita que falhe também não prorroga o TTL
+original. Essa política não expira o status de análise já persistido no deck;
+é necessário reanalisar para atualizar esse resultado.
+
+O cache de resolução de componentes relacionados (`resolvedCards`) permanece
+separado, com validade de 24 horas após a escrita; ele não armazena legalidades.
 
 ### Dependência operacional e continuidade
 
@@ -740,15 +767,19 @@ Arena, resolve para `Esika, God of the Tree // The Prismatic Bridge`, mantendo o
 continua aceito. Nomes parciais ou apenas do verso não são aceitos nesse fallback;
 mais de um `oracle_id` com a mesma face frontal gera erro 422 por ambiguidade.
 
-O resultado usa o cache exclusivo `cards_by_name`, cuja chave preserva maiúsculas
-e minúsculas. O nome deve corresponder exatamente à grafia no Card Manager (por
-exemplo, `Lightning Bolt`, não `lightning bolt`). Linhas com o nome frontal e o
+O cache `cards_by_name` guarda apenas o mapeamento do nome para `oracle_id`, cuja
+chave preserva maiúsculas e minúsculas. Os metadados ficam somente em `cards`,
+compartilhados pelas consultas por ID, nome completo e nome frontal. Resolver outro
+nome não sobrescreve nem renova uma entrada de metadados ainda válida.
+O nome deve corresponder exatamente à grafia no Card Manager (por exemplo, `Lightning Bolt`, não `lightning bolt`). Linhas com o nome frontal e o
 nome completo da mesma carta somam quantidades por `oracle_id` e zona. As regras
 existentes do formato são aplicadas; qualquer falha desfaz toda a importação,
 incluindo o deck.
 O deck permanece com status UNDEFINED até a análise.
-Buscas válidas sem correspondência retornam 422 com o nome informado. Falhas HTTP,
-de conexão ou respostas inválidas do Card Manager retornam 503.
+Buscas válidas sem correspondência retornam 422 com o nome informado. Falhas HTTP
+na busca, de conexão ou respostas inválidas do Card Manager retornam 503. Se um
+alias ainda válido exigir a recarga por oracle ID, aplica-se o tratamento dessa
+consulta: HTTP 4xx do catálogo retorna 404; falhas de comunicação ou 5xx retornam 503.
 
 Erros de parsing retornam `422 application/problem+json`, com `code` estável,
 `field: "rawText"` e `line` quando há uma linha específica. `line` começa em 1 e

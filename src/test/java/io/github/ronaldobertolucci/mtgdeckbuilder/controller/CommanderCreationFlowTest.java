@@ -73,12 +73,7 @@ class CommanderCreationFlowTest {
                         """.formatted(accessory, landJson), MediaType.APPLICATION_JSON));
         server.expect(requestTo("http://card-manager.test/cards/search?lang=en&name_exact=Leader&limit=100&offset=0"))
                 .andRespond(withSuccess("{\"items\":[" + commanderJson + "],\"limit\":100,\"offset\":0,\"hasNext\":false}", MediaType.APPLICATION_JSON));
-        if (legality.equals("legal")) {
-            server.expect(requestTo("http://card-manager.test/cards/" + commander + "?lang=en"))
-                    .andRespond(withSuccess(commanderJson, MediaType.APPLICATION_JSON));
-            server.expect(requestTo("http://card-manager.test/cards/" + land + "?lang=en"))
-                    .andRespond(withSuccess(landJson, MediaType.APPLICATION_JSON));
-        }
+        // Name resolution already populated the canonical ID cache; validation reuses it.
         User user = new User(); user.setId(42L);
         var result = mvc.perform(post("/decks/import")
                 .with(authentication(new UsernamePasswordAuthenticationToken(user, null, List.of())))

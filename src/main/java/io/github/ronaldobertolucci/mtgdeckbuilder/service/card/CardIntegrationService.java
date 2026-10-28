@@ -8,7 +8,7 @@ import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardManagerUnavailab
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.CardNotFoundException;
 import io.github.ronaldobertolucci.mtgdeckbuilder.exception.RuleViolationException;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.util.StringUtils;
@@ -34,26 +34,41 @@ public class CardIntegrationService {
 
     private final RestClient restClient;
     private final CardManagerProperties properties;
+    private final org.springframework.cache.Cache cards;
+    private final org.springframework.cache.Cache names;
 
     public CardIntegrationService(@Qualifier("cardManagerRestClient") RestClient restClient,
-            CardManagerProperties properties) {
+            CardManagerProperties properties, CacheManager cacheManager) {
         this.restClient = restClient;
         this.properties = properties;
+        this.cards = Objects.requireNonNull(cacheManager.getCache("cards"));
+        this.names = Objects.requireNonNull(cacheManager.getCache("cards_by_name"));
     }
 
-    @Cacheable(value = "cards", key = "#oracleId")
     public CardDetailsResponse fetchCardDetails(UUID oracleId) {
-        return requestCardDetails(oracleId);
+        var cached = cards.get(oracleId, CardDetailsResponse.class);
+        if (cached != null) return cached;
+        var card = requestCardDetails(oracleId);
+        // Do not overwrite a concurrent refresh or reset the age of an existing entry.
+        var existing = cards.putIfAbsent(oracleId, card);
+        return existing == null ? card : (CardDetailsResponse) existing.get();
     }
 
-    @org.springframework.cache.annotation.CachePut(value = "cards", key = "#oracleId")
     public CardDetailsResponse refreshCardDetails(UUID oracleId) {
-        return requestCardDetails(oracleId);
+        var card = requestCardDetails(oracleId);
+        cards.put(oracleId, card);
+        return card;
     }
 
-    @Cacheable(value = "cards_by_name", key = "#name")
     public CardDetailsResponse fetchCardDetailsByName(String name) {
-        return requestCardByName(name, false);
+        UUID oracleId = names.get(name, UUID.class);
+        if (oracleId != null) return fetchCardDetails(oracleId);
+        var card = requestCardByName(name, false);
+        // Names (including front-face aliases) share one canonical metadata entry.
+        // A search must not overwrite an existing entry, possibly refreshed concurrently.
+        var existing = cards.putIfAbsent(card.oracleId(), card);
+        names.put(name, card.oracleId());
+        return existing == null ? card : (CardDetailsResponse) existing.get();
     }
 
     public CardDetailsResponse fetchAccessoryByName(String name) {
@@ -167,8 +182,8 @@ public class CardIntegrationService {
                             .build(oracleId))
                     .retrieve()
                     .body(CardDetailsResponse.class);
-            if (card == null) {
-                throw new CardManagerUnavailableException("Card Manager returned an empty response", null);
+            if (card == null || !oracleId.equals(card.oracleId())) {
+                throw new CardManagerUnavailableException("Card Manager returned empty or inconsistent card details", null);
             }
             return card;
         } catch (HttpClientErrorException ex) {
